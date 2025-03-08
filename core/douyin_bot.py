@@ -16,6 +16,7 @@ import time
 import os
 from datetime import datetime
 from .selectors import USER_PROFILE, COMMON
+import sys
 
 class DouyinBot:
     def __init__(self, config, db):
@@ -140,39 +141,329 @@ class DouyinBot:
     def visit_user_profile(self, username):
         """访问用户主页"""
         try:
-            self.driver.get(f"https://www.douyin.com/user/{username}")
-            self.random_sleep(2, 4)
+            # 确保username是字符串类型
+            if username is None:
+                raise ValueError("用户名不能为空")
+                
+            username = str(username)  # 确保转换为字符串
+            
+            # 构建用户主页URL
+            user_url = f"https://www.douyin.com/user/{username}"
+            logger.info(f"正在访问用户主页: {username}")
+            
+            # 使用try-except包装导航操作
+            try:
+                # 访问用户主页
+                self.driver.get(user_url)
+                logger.info(f"成功导航到URL: {user_url}")
+            except Exception as e:
+                logger.error(f"导航到URL失败: {str(e)}")
+                # 尝试刷新页面
+                try:
+                    self.driver.refresh()
+                    logger.info("刷新页面成功")
+                except:
+                    logger.error("刷新页面失败")
+                    
+                # 再次尝试访问
+                self.driver.get(user_url)
+                logger.info(f"第二次尝试导航到URL: {user_url}")
             
             # 等待页面加载完成
-            self.wait.until(
-                EC.invisibility_of_element_located((By.XPATH, COMMON['LOADING']))
-            )
+            self.random_sleep(5, 8)  # 增加等待时间
             
+            # 检查是否成功加载用户页面
+            try:
+                # 检查URL是否包含用户ID
+                current_url = self.driver.current_url
+                if username not in current_url:
+                    logger.warning(f"当前URL不包含目标用户ID: {current_url}")
+                
+                # 检查页面标题
+                title = self.driver.title
+                logger.info(f"页面标题: {title}")
+                
+                # 检查是否有错误信息
+                error_elements = self.driver.find_elements(By.XPATH, "//div[contains(text(), '错误') or contains(text(), '找不到') or contains(text(), '不存在')]")
+                if error_elements:
+                    for elem in error_elements:
+                        logger.warning(f"页面可能包含错误信息: {elem.text}")
+                        
+                # 检查是否有用户信息元素
+                user_elements = self.driver.find_elements(By.XPATH, "//div[contains(@class, 'author') or contains(@class, 'user')]")
+                if not user_elements:
+                    logger.warning("未找到用户信息元素")
+                else:
+                    logger.info(f"找到 {len(user_elements)} 个可能的用户信息元素")
+                    
+            except Exception as e:
+                logger.warning(f"检查页面加载状态时出错: {str(e)}")
+            
+            # 保存页面截图
+            try:
+                screenshot_path = f"logs/user_profile_{username}_{int(time.time())}.png"
+                self.driver.save_screenshot(screenshot_path)
+                logger.info(f"已保存用户主页截图: {screenshot_path}")
+            except:
+                pass
+                
+            return True
         except Exception as e:
             logger.error(f"访问用户主页失败: {str(e)}")
+            # 保存错误截图
+            try:
+                screenshot_path = f"logs/error_screenshot_{int(time.time())}.png"
+                self.driver.save_screenshot(screenshot_path)
+                logger.error(f"已保存错误截图: {screenshot_path}")
+            except:
+                pass
             raise
             
     def _click_fans_tab(self):
         """点击粉丝标签"""
-        fans_tab = self.wait.until(
-            EC.element_to_be_clickable((By.XPATH, USER_PROFILE['FANS_TAB']))
-        )
-        fans_tab.click()
-        self.random_sleep(1, 2)
+        try:
+            # 等待页面完全加载
+            self.random_sleep(3, 5)
+            
+            # 记录当前URL
+            current_url = self.driver.current_url
+            
+            # 如果URL中已经包含fans或follower，说明已经在粉丝页面
+            if "fans" in current_url or "follower" in current_url:
+                logger.info("已经在粉丝页面，无需点击粉丝标签")
+                return True
+                
+            # 尝试直接修改URL方式进入粉丝页面
+            try:
+                # 从当前URL中提取用户ID
+                user_id = current_url.split("/user/")[1].split("?")[0]
+                # 构建粉丝页面URL
+                fans_url = f"https://www.douyin.com/user/{user_id}?tab=fans"
+                # 访问粉丝页面
+                self.driver.get(fans_url)
+                logger.info("通过URL直接访问粉丝页面")
+                self.random_sleep(3, 5)
+                return True
+            except Exception as e:
+                logger.warning(f"通过URL访问粉丝页面失败: {str(e)}，尝试点击方式")
+                
+            # 尝试点击粉丝标签
+            fans_tab = self.wait.until(
+                EC.element_to_be_clickable((By.XPATH, USER_PROFILE['FANS_TAB']))
+            )
+            fans_tab.click()
+            logger.info("成功点击粉丝标签")
+            self.random_sleep(3, 5)
+            return True
+            
+        except Exception as e:
+            logger.error(f"点击粉丝标签失败: {str(e)}")
+            # 保存错误截图
+            try:
+                screenshot_path = f"logs/error_screenshot_{int(time.time())}.png"
+                self.driver.save_screenshot(screenshot_path)
+                logger.error(f"已保存错误截图: {screenshot_path}")
+            except:
+                pass
+            raise
         
     def _click_following_tab(self):
         """点击关注标签"""
-        following_tab = self.wait.until(
-            EC.element_to_be_clickable((By.XPATH, USER_PROFILE['FOLLOWING_TAB']))
-        )
-        following_tab.click()
-        self.random_sleep(1, 2)
+        try:
+            # 等待页面完全加载
+            self.random_sleep(3, 5)
+            
+            # 记录当前URL
+            current_url = self.driver.current_url
+            
+            # 如果URL中已经包含following，说明已经在关注页面
+            if "following" in current_url:
+                logger.info("已经在关注页面，无需点击关注标签")
+                return True
+                
+            # 尝试直接修改URL方式进入关注页面
+            try:
+                # 从当前URL中提取用户ID
+                user_id = current_url.split("/user/")[1].split("?")[0]
+                # 构建关注页面URL
+                following_url = f"https://www.douyin.com/user/{user_id}?tab=following"
+                # 访问关注页面
+                self.driver.get(following_url)
+                logger.info("通过URL直接访问关注页面")
+                self.random_sleep(3, 5)
+                return True
+            except Exception as e:
+                logger.warning(f"通过URL访问关注页面失败: {str(e)}，尝试点击方式")
+                
+            # 尝试所有可能的关注标签选择器
+            for selector in USER_PROFILE['FOLLOWING_TAB']:
+                try:
+                    # 尝试常规点击
+                    following_tab = self.wait.until(
+                        EC.element_to_be_clickable((By.XPATH, selector))
+                    )
+                    
+                    # 滚动到元素位置
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", following_tab)
+                    self.random_sleep(1, 2)
+                    
+                    # 尝试点击
+                    try:
+                        following_tab.click()
+                        logger.info(f"成功点击关注标签: {selector}")
+                        self.random_sleep(3, 5)
+                        return True
+                    except ElementClickInterceptedException:
+                        # 如果常规点击失败，尝试JavaScript点击
+                        self.driver.execute_script("arguments[0].click();", following_tab)
+                        logger.info(f"使用JavaScript点击关注标签: {selector}")
+                        self.random_sleep(3, 5)
+                        return True
+                        
+                except (TimeoutException, NoSuchElementException, ElementClickInterceptedException):
+                    continue
+                    
+            # 如果所有选择器都失败，尝试通过关注数量点击
+            try:
+                # 查找包含关注数量的元素
+                following_count_elements = self.driver.find_elements(By.XPATH, 
+                    "//div[contains(text(), '关注') or contains(., '关注')]")
+                
+                for element in following_count_elements:
+                    try:
+                        # 滚动到元素位置
+                        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+                        self.random_sleep(1, 2)
+                        
+                        # 点击元素
+                        element.click()
+                        logger.info("通过关注数量元素点击成功")
+                        self.random_sleep(3, 5)
+                        return True
+                    except:
+                        # 尝试JavaScript点击
+                        try:
+                            self.driver.execute_script("arguments[0].click();", element)
+                            logger.info("通过JavaScript点击关注数量元素成功")
+                            self.random_sleep(3, 5)
+                            return True
+                        except:
+                            continue
+            except:
+                pass
+                
+            # 如果所有方法都失败，截图保存
+            screenshot_path = f"logs/error_screenshot_{int(time.time())}.png"
+            self.driver.save_screenshot(screenshot_path)
+            logger.error(f"无法找到或点击关注标签，已保存截图: {screenshot_path}")
+            
+            raise Exception("无法找到或点击关注标签")
+            
+        except Exception as e:
+            logger.error(f"点击关注标签失败: {str(e)}")
+            raise
         
     def _get_fan_items(self):
         """获取粉丝列表项"""
-        return self.wait.until(
-            EC.presence_of_all_elements_located((By.XPATH, USER_PROFILE['FAN_ITEM']))
-        )
+        try:
+            # 等待页面完全加载
+            logger.info("等待页面完全加载...")
+            self.random_sleep(8, 10)  # 增加更长的等待时间
+            
+            # 直接使用JavaScript获取所有可能的粉丝项
+            logger.info("尝试使用JavaScript直接获取粉丝项...")
+            js_items = self.driver.execute_script("""
+                // 查找所有可能的粉丝项
+                function findFanItems() {
+                    // 常见的用户项选择器
+                    var selectors = [
+                        'div[class*="user-item"]', 
+                        'div[class*="follow-item"]', 
+                        'div[class*="user-card"]',
+                        'div[class*="card-item"]',
+                        'div[data-e2e*="user-item"]',
+                        'div[class*="userItem"]',
+                        // 抖音特定选择器
+                        'div.author-card-user',
+                        'div.user-card',
+                        'div.user-info-card',
+                        'div.user-container',
+                        // 通用选择器
+                        'div[class*="user"]',
+                        'div[class*="follow"]',
+                        'div[class*="fans"]'
+                    ];
+                    
+                    // 尝试每个选择器
+                    for (var i = 0; i < selectors.length; i++) {
+                        var items = document.querySelectorAll(selectors[i]);
+                        if (items && items.length > 3) {  // 至少要有几个项才可能是粉丝列表
+                            console.log("找到粉丝项: " + selectors[i] + ", 数量: " + items.length);
+                            return Array.from(items);
+                        }
+                    }
+                    
+                    // 如果上面的方法都失败，尝试查找包含用户名和关注按钮的容器
+                    var allDivs = document.querySelectorAll('div');
+                    var candidates = [];
+                    
+                    for (var i = 0; i < allDivs.length; i++) {
+                        var div = allDivs[i];
+                        // 检查是否包含用户名元素
+                        var hasUsername = div.querySelector('span[class*="name"]') || 
+                                         div.querySelector('div[class*="name"]') ||
+                                         div.querySelector('span[class*="nickname"]') ||
+                                         div.querySelector('div[class*="nickname"]');
+                                         
+                        // 检查是否包含关注按钮
+                        var hasFollowBtn = div.querySelector('button') || 
+                                          div.querySelector('div[class*="follow"]') ||
+                                          div.querySelector('div[role="button"]');
+                                          
+                        if (hasUsername && hasFollowBtn) {
+                            candidates.push(div);
+                        }
+                    }
+                    
+                    if (candidates.length > 3) {
+                        console.log("通过组合条件找到粉丝项，数量: " + candidates.length);
+                        return candidates;
+                    }
+                    
+                    return [];
+                }
+                
+                return findFanItems();
+            """)
+            
+            if js_items and len(js_items) > 0:
+                logger.info(f"通过JavaScript成功获取到 {len(js_items)} 个粉丝项")
+                return js_items
+                
+            # 如果JavaScript方法失败，尝试截图并保存页面源码
+            logger.error("JavaScript方法获取粉丝列表失败")
+            screenshot_path = f"logs/error_screenshot_{int(time.time())}.png"
+            self.driver.save_screenshot(screenshot_path)
+            logger.error(f"已保存截图: {screenshot_path}")
+            
+            # 保存页面源码
+            html_path = f"logs/page_source_{int(time.time())}.html"
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(self.driver.page_source)
+            logger.error(f"已保存页面源码: {html_path}")
+            
+            raise Exception("无法获取粉丝列表")
+            
+        except Exception as e:
+            logger.error(f"获取粉丝列表失败: {str(e)}")
+            # 保存截图
+            try:
+                screenshot_path = f"logs/error_screenshot_{int(time.time())}.png"
+                self.driver.save_screenshot(screenshot_path)
+                logger.error(f"已保存错误截图: {screenshot_path}")
+            except:
+                pass
+            raise
         
     def _get_following_items(self):
         """获取关注列表项"""
@@ -304,65 +595,176 @@ class DouyinBot:
             self._retry_on_exception(self.unfollow_user, user_id, username)
             
     def run_tasks(self):
-        """执行主要任务"""
+        """运行任务"""
+        # 检查浏览器是否已关闭
+        if self.is_browser_closed():
+            return
+            
+        # 检查是否在工作时间
+        if not self.is_working_hour():
+            return
+            
+        # 处理取关任务
+        if self.is_browser_closed():
+            return
+            
         try:
+            self.unfollow_inactive_users()
+        except Exception as e:
+            logger.error(f"执行取关任务失败: {str(e)}")
+            # 保存错误截图
+            try:
+                screenshot_path = f"logs/error_screenshot_{int(time.time())}.png"
+                self.driver.save_screenshot(screenshot_path)
+                logger.error(f"已保存错误截图: {screenshot_path}")
+            except:
+                pass
+            # 中止程序
+            logger.error("由于执行取关任务失败，中止程序")
+            sys.exit(1)
+            
+        # 检查今日关注是否达到上限
+        if self.today_follows >= self.config['operation']['daily_follow_limit']:
+            logger.info("今日关注已达上限")
+            return
+            
+        # 遍历目标用户
+        for target_user in self.config['target']['users']:
             # 检查浏览器是否已关闭
             if self.is_browser_closed():
                 return
                 
-            # 先处理取关任务
-            self.unfollow_inactive_users()
-            
-            # 检查今日是否达到关注上限
-            if self.today_follows >= self.config['operation']['daily_follow_limit']:
-                logger.info("今日关注已达上限")
-                return
+            # 确保target_user是字符串类型
+            if target_user is None:
+                logger.error("目标用户不能为空")
+                # 中止程序
+                logger.error("由于目标用户为空，中止程序")
+                sys.exit(1)
                 
-            # 遍历目标用户
-            for target_user in self.config['target']['users']:
-                # 再次检查浏览器是否已关闭
-                if self.is_browser_closed():
-                    return
-                    
-                if self.today_follows >= self.config['operation']['daily_follow_limit']:
-                    break
-                    
-                logger.info(f"正在处理目标用户: {target_user}")
+            target_user = str(target_user)  # 确保转换为字符串
+            
+            try:
+                logger.info(f"开始处理目标用户: {target_user}")
                 
                 # 访问用户主页
-                self._retry_on_exception(self.visit_user_profile, target_user)
+                try:
+                    self.visit_user_profile(target_user)
+                except Exception as e:
+                    logger.error(f"访问用户主页失败: {str(e)}")
+                    # 保存错误截图
+                    try:
+                        screenshot_path = f"logs/error_screenshot_{int(time.time())}.png"
+                        self.driver.save_screenshot(screenshot_path)
+                        logger.error(f"已保存错误截图: {screenshot_path}")
+                    except:
+                        pass
+                    # 中止程序
+                    logger.error("由于访问用户主页失败，中止程序")
+                    sys.exit(1)
                 
                 # 点击粉丝标签
-                self._retry_on_exception(self._click_fans_tab)
+                try:
+                    self._click_fans_tab()
+                except Exception as e:
+                    logger.error(f"点击粉丝标签失败: {str(e)}")
+                    # 保存错误截图
+                    try:
+                        screenshot_path = f"logs/error_screenshot_{int(time.time())}.png"
+                        self.driver.save_screenshot(screenshot_path)
+                        logger.error(f"已保存错误截图: {screenshot_path}")
+                    except:
+                        pass
+                    # 中止程序
+                    logger.error("由于点击粉丝标签失败，中止程序")
+                    sys.exit(1)
+                
+                # 获取粉丝列表
+                fan_count = 0
+                max_fans = 50  # 最多处理50个粉丝
+                
+                # 获取粉丝列表项
+                try:
+                    fan_items = self._get_fan_items()
+                    
+                    if not fan_items or len(fan_items) == 0:
+                        logger.error(f"获取粉丝列表为空，中止程序")
+                        # 保存错误截图
+                        try:
+                            screenshot_path = f"logs/error_screenshot_{int(time.time())}.png"
+                            self.driver.save_screenshot(screenshot_path)
+                            logger.error(f"已保存错误截图: {screenshot_path}")
+                        except:
+                            pass
+                        # 中止程序
+                        sys.exit(1)
+                        
+                    logger.info(f"成功获取到 {len(fan_items)} 个粉丝项")
+                    
+                except Exception as e:
+                    logger.error(f"获取粉丝列表失败: {str(e)}")
+                    # 保存错误截图
+                    try:
+                        screenshot_path = f"logs/error_screenshot_{int(time.time())}.png"
+                        self.driver.save_screenshot(screenshot_path)
+                        logger.error(f"已保存错误截图: {screenshot_path}")
+                    except:
+                        pass
+                    # 中止程序
+                    logger.error("由于获取粉丝列表失败，中止程序")
+                    sys.exit(1)
                 
                 # 处理粉丝列表
-                scroll_count = 0
-                while (self.today_follows < self.config['operation']['daily_follow_limit'] 
-                       and scroll_count < 10):
-                    # 再次检查浏览器是否已关闭
+                for fan_item in fan_items:
+                    # 检查浏览器是否已关闭
                     if self.is_browser_closed():
                         return
                         
-                    # 获取粉丝列表
-                    fan_items = self._retry_on_exception(self._get_fan_items)
-                    
-                    # 关注粉丝
-                    for fan_item in fan_items:
-                        # 再次检查浏览器是否已关闭
-                        if self.is_browser_closed():
-                            return
-                            
-                        if self.today_follows >= self.config['operation']['daily_follow_limit']:
-                            break
-                        self._retry_on_exception(self.follow_user, fan_item)
+                    # 检查今日关注是否达到上限
+                    if self.today_follows >= self.config['operation']['daily_follow_limit']:
+                        logger.info("今日关注已达上限")
+                        return
                         
-                    # 滚动加载更多
-                    self._retry_on_exception(self._scroll_list, USER_PROFILE['FANS_LIST'])
-                    scroll_count += 1
-                    
-        except Exception as e:
-            logger.error(f"执行任务失败: {str(e)}")
-            
+                    # 关注用户
+                    try:
+                        success = self.follow_user(fan_item)
+                        
+                        if success:
+                            fan_count += 1
+                            
+                        # 如果已经处理了足够多的粉丝，退出循环
+                        if fan_count >= max_fans:
+                            break
+                    except Exception as e:
+                        logger.error(f"关注用户失败: {str(e)}")
+                        # 保存错误截图
+                        try:
+                            screenshot_path = f"logs/error_screenshot_{int(time.time())}.png"
+                            self.driver.save_screenshot(screenshot_path)
+                            logger.error(f"已保存错误截图: {screenshot_path}")
+                        except:
+                            pass
+                        # 中止程序
+                        logger.error("由于关注用户失败，中止程序")
+                        sys.exit(1)
+                
+                logger.info(f"目标用户 {target_user} 处理完成，成功关注 {fan_count} 个粉丝")
+                
+            except Exception as e:
+                logger.error(f"处理目标用户 {target_user} 失败: {str(e)}")
+                # 保存截图
+                try:
+                    screenshot_path = f"logs/error_screenshot_{int(time.time())}.png"
+                    self.driver.save_screenshot(screenshot_path)
+                    logger.error(f"已保存错误截图: {screenshot_path}")
+                except:
+                    pass
+                
+                # 中止程序
+                logger.error("由于处理目标用户失败，中止程序")
+                sys.exit(1)
+                
+        logger.info("所有目标用户处理完成")
+        
     def stop(self):
         """停止程序并清理资源"""
         if self.driver:
