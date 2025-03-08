@@ -1,0 +1,41 @@
+# 抖音账号配置
+account:
+  username: "your_username"  # 你的抖音账号
+  device_id: "your_device_id"  # 设备ID（可选）
+
+# 目标配置
+target:
+  users:  # 目标用户列表（想要涨粉的同类型账号）
+    - "user1"  # 替换为实际的抖音用户ID
+    - "user2"  # 替换为实际的抖音用户ID
+  
+# 操作配置
+operation:
+  daily_follow_limit: 150  # 每日关注上限
+  daily_unfollow_limit: 100  # 每日取关上限
+  follow_interval: [30, 60]  # 关注操作间隔（秒）
+  unfollow_interval: [20, 40]  # 取关操作间隔（秒）
+  unfollow_days: 3  # 超过几天未回关则取关
+  
+# 工作时间配置
+working_hours:
+  - [9, 12]  # 上午9点到12点
+  - [14, 17]  # 下午2点到5点
+  - [19, 22]  # 晚上7点到10点
+
+# 互动配置
+interaction:
+  comments:  # 预设评论列表
+    - "不错不错👍"
+    - "支持一下"
+    - "学习了"
+    - "很棒"
+  like_probability: 0.8  # 点赞概率
+  comment_probability: 0.3  # 评论概率
+
+# 设备配置
+device:
+  platform: "Android"
+  device_name: "your_device_name"
+  app_package: "com.ss.android.ugc.aweme"
+  app_activity: ".main.MainActivity" 
