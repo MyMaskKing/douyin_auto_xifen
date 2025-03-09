@@ -1,49 +1,126 @@
-from loguru import logger
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import os
 import time
+import signal
+import sys
+from loguru import logger
 from core.douyin_bot import DouyinBot
-from utils.config import load_config
 from utils.db import Database
+from utils.config import load_config
+from datetime import datetime
+
+# 创建分类日志目录
+def setup_logging():
+    # 创建日期目录
+    today = datetime.now().strftime("%Y-%m-%d")
+    log_dir = os.path.join("logs", today, "app_logs")
+    os.makedirs(log_dir, exist_ok=True)
+    
+    # 配置日志
+    logger.remove()  # 移除默认处理器
+    
+    # 添加文件日志处理器
+    log_file = os.path.join(log_dir, f"douyin_bot_{datetime.now().strftime('%H-%M-%S')}.log")
+    logger.add(
+        log_file, 
+        rotation="100 MB", 
+        level="INFO",
+        encoding="utf-8"
+    )
+    
+    # 添加控制台日志处理器
+    logger.add(sys.stderr, level="INFO")
+    
+    logger.info(f"日志文件路径: {log_file}")
+
+# 创建必要的目录
+def setup_directories():
+    # 创建基本目录
+    os.makedirs("logs", exist_ok=True)
+    os.makedirs("data", exist_ok=True)
+    
+    # 创建日期目录
+    today = datetime.now().strftime("%Y-%m-%d")
+    
+    # 创建分类目录
+    categories = ["screenshot", "html", "error", "analysis"]
+    operations = ["user_profile", "before_click_fans", "after_click_fans", 
+                 "after_js_click_fans", "fans_page", "before_follow", 
+                 "after_follow", "error", "fans_elements"]
+    
+    for category in categories:
+        for operation in operations:
+            os.makedirs(os.path.join("logs", today, category, operation), exist_ok=True)
+
+def signal_handler(sig, frame):
+    """处理程序中断信号"""
+    logger.info("接收到中断信号，正在优雅退出...")
+    if 'bot' in globals():
+        bot.stop()
+    sys.exit(0)
 
 def main():
-    # 加载配置
-    config = load_config()
+    """主函数"""
+    # 设置日志和目录
+    setup_logging()
+    setup_directories()
     
-    # 初始化数据库
-    db = Database()
-    
-    # 初始化机器人
-    bot = DouyinBot(config, db)
+    # 注册信号处理
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
     
     try:
-        # 启动机器人
+        # 加载配置
+        config = load_config()
+        
+        # 初始化数据库
+        db = Database()
+        
+        # 创建机器人实例
+        global bot
+        bot = DouyinBot(config, db)
+        
+        # 启动浏览器
         bot.start()
         
-        # 执行主要任务
+        logger.info("抖音自动涨粉工具已启动")
+        
+        # 主循环
         while True:
-            # 检查浏览器是否已关闭
-            if bot.is_browser_closed():
-                logger.info("浏览器已关闭，程序退出")
-                break
-                
-            # 检查是否在运行时间范围内
-            if bot.is_working_hour():
-                # 执行涨粉任务
+            try:
+                # 检查浏览器是否已关闭
+                if bot.is_browser_closed():
+                    logger.info("浏览器已关闭，程序退出")
+                    break
+                    
+                # 运行任务
                 bot.run_tasks()
-            else:
-                logger.info("当前不在工作时间范围内，休息中...")
                 
-            # 短暂休息，避免CPU占用过高，同时可以检测浏览器关闭状态
-            time.sleep(10)
+                # 休息一段时间
+                time.sleep(10)
                 
+            except Exception as e:
+                logger.error(f"运行任务时出错: {str(e)}")
+                time.sleep(30)  # 出错后等待较长时间再重试
+                
+                # 尝试重新连接浏览器
+                try:
+                    bot.start()
+                except:
+                    logger.error("重新连接浏览器失败")
+                    time.sleep(60)  # 重连失败后等待更长时间
+        
     except KeyboardInterrupt:
-        logger.info("程序被用户中断")
+        logger.info("用户中断，程序退出")
     except Exception as e:
-        logger.error(f"程序发生错误: {str(e)}")
+        logger.error(f"程序运行出错: {str(e)}")
     finally:
-        # 清理资源
-        bot.stop()
-        db.close()
+        # 确保程序退出时不关闭浏览器
+        if 'bot' in globals():
+            bot.stop()
+        logger.info("程序已退出")
 
 if __name__ == "__main__":
-    logger.add("logs/runtime_{time}.log", rotation="1 day")
     main() 
