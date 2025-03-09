@@ -6,9 +6,15 @@ account:
 # 目标配置
 target:
   users:  # 目标用户列表（想要涨粉的同类型账号）
-    - "user1"  # 替换为实际的抖音用户ID
-    - "user2"  # 替换为实际的抖音用户ID
+    - "user_id_1"  # 第一个目标用户
+    - "user_id_2"  # 第二个目标用户
   
+# 功能开关配置
+features:
+  follow_fans: true      # 是否启用关注粉丝功能
+  check_follows: true    # 是否启用审查关注列表功能
+  unfollow_users: true   # 是否启用取关功能
+
 # 操作配置
 operation:
   daily_follow_limit: 150  # 每日关注上限
@@ -16,12 +22,18 @@ operation:
   follow_interval: [30, 60]  # 关注操作间隔（秒）
   unfollow_interval: [20, 40]  # 取关操作间隔（秒）
   unfollow_days: 3  # 超过几天未回关则取关
+  max_fans_per_target: 50  # 每个目标用户最多处理的粉丝数
   
 # 工作时间配置
 working_hours:
-  - [9, 12]  # 上午9点到12点
-  - [14, 17]  # 下午2点到5点
-  - [19, 22]  # 晚上7点到10点
+  start: 9  # 工作开始时间（小时）
+  end: 22   # 工作结束时间（小时）
+
+# 全天运行模式
+all_day_operation: false  # 设置为true时忽略工作时间限制，全天运行
+
+# 测试模式配置
+test_mode: false  # 设置为true时忽略工作时间限制，随时可以运行
 
 # 互动配置
 interaction:
@@ -38,4 +50,10 @@ device:
   platform: "Android"
   device_name: "your_device_name"
   app_package: "com.ss.android.ugc.aweme"
-  app_activity: ".main.MainActivity" 
+  app_activity: ".main.MainActivity"
+
+# 日志配置
+logging:
+  screenshot_level: "NORMAL"  # 截图级别: ERROR, CRITICAL, NORMAL, DEBUG
+  max_log_files: 10  # 最大保留日志文件数
+  max_screenshot_files: 50  # 最大保留截图文件数 
