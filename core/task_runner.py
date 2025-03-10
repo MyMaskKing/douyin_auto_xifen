@@ -198,10 +198,10 @@ class TaskRunner:
                                 continue  # 跳过当前用户，处理下一个
                         
                         # 执行取关操作
-                        if self.follow_manager.unfollow_user(user['user_id'], user['username']):
+                        if self.follow_manager.unfollow_user(user['username'], user['user_id']):
                             success_count += 1
                             # 更新数据库中的用户状态
-                            self.db.update_user_unfollow_status(user['user_id'])
+                            self.db.remove_follow_record(user['user_id'])
                         else:
                             logger.warning(f"取关用户失败: {user['username']} ({user['user_id']})")
                         

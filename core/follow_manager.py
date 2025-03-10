@@ -424,61 +424,94 @@ class FollowListManager:
             成功返回True，失败返回False
         """
         try:
-            logger.info(f"准备取消关注用户: {username} ({user_id})")
+            logger.info(f"准备取消关注用户: {user_id} ({username})")
             
             # 保存操作前的截图
-            save_screenshot(self.driver, f"unfollow_{username}_before", level="NORMAL")
+            save_screenshot(self.driver, f"unfollow_{user_id}_before", level="NORMAL")
             
-            # 查找已关注按钮
-            followed_buttons = self.driver.find_elements(By.XPATH, 
-                "//button[contains(text(), '已关注') or contains(text(), '互相关注')] | //div[contains(@class, 'followed')]")
+            # 查找已关注按钮 - 使用data-e2e属性精确定位
+            followed_button_selectors = [
+                "//button[@data-e2e='user-info-follow-btn']"  # 使用您提供的data-e2e属性
+            ]
             
-            if not followed_buttons:
-                logger.warning(f"未找到已关注按钮: {username}")
-                save_screenshot(self.driver, f"unfollow_{username}_not_found", level="ERROR")
+            followed_btn = None
+            for selector in followed_button_selectors:
+                try:
+                    buttons = self.driver.find_elements(By.XPATH, selector)
+                    if buttons:
+                        for button in buttons:
+                            if button.is_displayed():
+                                button_text = button.text.strip()
+                                if "已关注" in button_text or "互相关注" in button_text:
+                                    followed_btn = button
+                                    logger.info(f"找到已关注按钮，使用选择器: {selector}")
+                                    break
+                    if followed_btn:
+                        break
+                except Exception as e:
+                    logger.warning(f"使用选择器 {selector} 查找按钮时出错: {str(e)}")
+                    continue
+            
+            if not followed_btn:
+                logger.warning(f"未找到已关注按钮: {user_id}")
+                save_screenshot(self.driver, f"unfollow_{user_id}_not_found", level="ERROR")
                 return False
-                
+            
+            # 记录按钮文本和类名，便于调试
+            try:
+                button_text = followed_btn.text.strip()
+                button_class = followed_btn.get_attribute("class")
+                logger.info(f"已关注按钮文本: '{button_text}', 类名: '{button_class}'")
+            except:
+                logger.warning("无法获取按钮文本或类名")
+            
             # 点击已关注按钮
-            followed_btn = followed_buttons[0]
             try:
+                logger.info("尝试直接点击已关注按钮")
                 followed_btn.click()
-                self.random_sleep(1, 2)
-            except ElementClickInterceptedException:
-                logger.warning(f"点击已关注按钮被拦截，尝试使用JavaScript点击: {username}")
-                self.driver.execute_script("arguments[0].click();", followed_btn)
-                self.random_sleep(1, 2)
+                self.random_sleep(2, 3)  # 等待按钮状态变化
+            except Exception as e:
+                logger.warning(f"直接点击已关注按钮失败: {str(e)}，尝试使用JavaScript点击")
+                try:
+                    self.driver.execute_script("arguments[0].click();", followed_btn)
+                    self.random_sleep(2, 3)  # 等待按钮状态变化
+                except Exception as js_e:
+                    logger.error(f"JavaScript点击已关注按钮也失败: {str(js_e)}")
+                    save_screenshot(self.driver, f"unfollow_{user_id}_click_failed", level="ERROR")
+                    return False
             
-            # 查找取消关注确认按钮
-            confirm_buttons = self.driver.find_elements(By.XPATH, 
-                "//button[contains(text(), '取消关注')] | //div[contains(text(), '取消关注')]")
-            
-            if not confirm_buttons:
-                logger.warning(f"未找到取消关注确认按钮: {username}")
-                save_screenshot(self.driver, f"unfollow_{username}_no_confirm", level="ERROR")
-                return False
-                
-            # 点击确认按钮
-            confirm_btn = confirm_buttons[0]
+            # 验证取关是否成功 - 检查按钮是否变成了"关注"
             try:
-                confirm_btn.click()
-                self.random_sleep(1, 2)
-            except ElementClickInterceptedException:
-                logger.warning(f"点击确认按钮被拦截，尝试使用JavaScript点击: {username}")
-                self.driver.execute_script("arguments[0].click();", confirm_btn)
-                self.random_sleep(1, 2)
-            
-            # 保存操作后的截图
-            save_screenshot(self.driver, f"unfollow_{username}_after", level="NORMAL")
-            
-            # 更新数据库
-            self.db.remove_follow_record(user_id)
-            logger.info(f"成功取消关注用户: {username} ({user_id})")
-            return True
+                # 重新查找按钮
+                follow_btn = self.driver.find_element(By.XPATH, "//button[@data-e2e='user-info-follow-btn']")
+                follow_btn_text = follow_btn.text.strip()
+                follow_btn_class = follow_btn.get_attribute("class")
+                
+                logger.info(f"点击后按钮文本: '{follow_btn_text}', 类名: '{follow_btn_class}'")
+                
+                # 判断是否成功取关 - 按钮文本变为"关注"
+                if "关注" == follow_btn_text and "已关注" not in follow_btn_text and "互相关注" not in follow_btn_text:
+                    logger.info(f"取关成功，按钮已变为 '{follow_btn_text}'")
+                    # 保存操作后的截图
+                    save_screenshot(self.driver, f"unfollow_{user_id}_after", level="NORMAL")
+                    
+                    # 更新数据库
+                    self.db.remove_follow_record(user_id)
+                    logger.info(f"成功取消关注用户: {user_id} ({username})")
+                    return True
+                else:
+                    logger.warning(f"取关失败，按钮文本为 '{follow_btn_text}'，未变为'关注'")
+                    save_screenshot(self.driver, f"unfollow_{user_id}_failed", level="ERROR")
+                    return False
+            except Exception as e:
+                logger.error(f"验证取关结果时出错: {str(e)}")
+                save_screenshot(self.driver, f"unfollow_{user_id}_verify_error", level="ERROR")
+                return False
             
         except Exception as e:
-            logger.error(f"取消关注用户失败: {username} ({user_id}), 错误: {str(e)}")
+            logger.error(f"取消关注用户失败: {user_id} ({username}), 错误: {str(e)}")
             # 保存错误截图
-            save_screenshot(self.driver, f"unfollow_{username}_error", level="ERROR")
+            save_screenshot(self.driver, f"unfollow_{user_id}_error", level="ERROR")
             return False
 
     def handle_task_failure(self, error_message, error, screenshot_name=None):
