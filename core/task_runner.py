@@ -14,6 +14,7 @@ import re
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.keys import Keys
 from .follow_manager import FollowListManager
+from .follow_fans_manager import FollowFansManager
 
 class TaskRunner:
     """任务运行类，负责任务调度和执行"""
@@ -42,6 +43,8 @@ class TaskRunner:
         self.today_unfollows = 0
         # 初始化关注列表管理器
         self.follow_list_manager = FollowListManager(browser_manager, db, config)
+        # 初始化粉丝关注管理器
+        self.follow_fans_manager = FollowFansManager(browser_manager, db, config)
         
     def handle_task_failure(self, error_message, error, screenshot_name=None):
         """
@@ -76,51 +79,113 @@ class TaskRunner:
                 logger.error("浏览器状态异常，无法执行任务")
                 return {'success': False, 'reason': '浏览器状态异常'}
             
+            # 获取功能开关配置
+            features = self.config.get('features', {})
+            unfollow_enabled = features.get('unfollow_users', False)
+            check_follows_enabled = features.get('check_follows', False)
+            follow_fans_enabled = features.get('follow_fans', False)
+            check_fans_enabled = features.get('check_fans', False)
+            follow_back_enabled = features.get('follow_back', False)
+            follow_video_fans_enabled = features.get('follow_video_fans', False)
+            follow_group_fans_enabled = features.get('follow_group_fans', False)
+            
+            logger.info(f"功能开关状态: 取关={unfollow_enabled}, 检查关注列表={check_follows_enabled}, "
+                       f"关注粉丝={follow_fans_enabled}, 检查粉丝列表={check_fans_enabled}, "
+                       f"回关={follow_back_enabled}, 关注视频评论者={follow_video_fans_enabled}, "
+                       f"关注群组成员={follow_group_fans_enabled}")
+            
             # 执行取关任务
-            try:
-                if self.run_unfollow_task():
-                    logger.info("取关任务执行成功")
-                else:
-                    logger.warning("取关任务执行失败，检查浏览器状态")
-                    if not self.browser_manager.check_and_restart_browser():
-                        logger.error("浏览器状态异常，无法继续执行任务")
-                        return {'success': False, 'reason': '浏览器状态异常'}
-            except Exception as e:
-                logger.error(f"执行取关任务时出错: {str(e)}")
-                self.handle_task_failure("执行取关任务时出错", e)
+            if unfollow_enabled:
+                try:
+                    if self.run_unfollow_task():
+                        logger.info("取关任务执行成功")
+                    else:
+                        logger.warning("取关任务执行失败，检查浏览器状态")
+                        if not self.browser_manager.check_and_restart_browser():
+                            logger.error("浏览器状态异常，无法继续执行任务")
+                            return {'success': False, 'reason': '浏览器状态异常'}
+                except Exception as e:
+                    logger.error(f"执行取关任务时出错: {str(e)}")
+                    self.handle_task_failure("执行取关任务时出错", e)
+            else:
+                logger.info("取关功能已禁用，跳过取关任务")
             
             # 执行检查关注列表任务
-            try:
-                if self.follow_list_manager.run_check_follows_task():
-                    # 获取配置的任务间隔时间
-                    task_interval = self.config.get('task', {}).get('check_follows_interval', 3600)  # 默认1小时
-                    logger.info(f"检查关注列表任务完成，休息 {task_interval} 秒后执行下一轮任务")
-                    return {
-                        'success': True,
-                        'task_type': 'check_follows',
-                        'interval': task_interval
-                    }
-                else:
-                    logger.warning("检查关注列表任务执行失败，检查浏览器状态")
-                    if not self.browser_manager.check_and_restart_browser():
-                        logger.error("浏览器状态异常，无法继续执行任务")
-                        return {'success': False, 'reason': '浏览器状态异常'}
-            except Exception as e:
-                logger.error(f"执行检查关注列表任务时出错: {str(e)}")
-                self.handle_task_failure("执行检查关注列表任务时出错", e)
+            if check_follows_enabled:
+                try:
+                    if self.follow_list_manager.run_check_follows_task():
+                        # 获取配置的任务间隔时间
+                        task_interval = self.config.get('task', {}).get('check_follows_interval', 3600)  # 默认1小时
+                        logger.info(f"检查关注列表任务完成，休息 {task_interval} 秒后执行下一轮任务")
+                        return {
+                            'success': True,
+                            'task_type': 'check_follows',
+                            'interval': task_interval
+                        }
+                    else:
+                        logger.warning("检查关注列表任务执行失败，检查浏览器状态")
+                        if not self.browser_manager.check_and_restart_browser():
+                            logger.error("浏览器状态异常，无法继续执行任务")
+                            return {'success': False, 'reason': '浏览器状态异常'}
+                except Exception as e:
+                    logger.error(f"执行检查关注列表任务时出错: {str(e)}")
+                    self.handle_task_failure("执行检查关注列表任务时出错", e)
+            else:
+                logger.info("检查关注列表功能已禁用，跳过检查关注列表任务")
             
-            # 执行关注粉丝任务
-            try:
-                if self.run_follow_fans_task():
-                    logger.info("关注粉丝任务执行成功")
-                else:
-                    logger.warning("关注粉丝任务执行失败，检查浏览器状态")
-                    if not self.browser_manager.check_and_restart_browser():
-                        logger.error("浏览器状态异常，无法继续执行任务")
-                        return {'success': False, 'reason': '浏览器状态异常'}
-            except Exception as e:
-                logger.error(f"执行关注粉丝任务时出错: {str(e)}")
-                self.handle_task_failure("执行关注粉丝任务时出错", e)
+            # 执行检查粉丝列表任务
+            if check_fans_enabled:
+                try:
+                    if self.fan_manager.run_check_fans_task():
+                        logger.info("检查粉丝列表任务执行成功")
+                    else:
+                        logger.warning("检查粉丝列表任务执行失败，检查浏览器状态")
+                        if not self.browser_manager.check_and_restart_browser():
+                            logger.error("浏览器状态异常，无法继续执行任务")
+                            return {'success': False, 'reason': '浏览器状态异常'}
+                except Exception as e:
+                    logger.error(f"执行检查粉丝列表任务时出错: {str(e)}")
+                    self.handle_task_failure("执行检查粉丝列表任务时出错", e)
+            else:
+                logger.info("检查粉丝列表功能已禁用，跳过检查粉丝列表任务")
+            
+            # 执行回关任务
+            if follow_back_enabled:
+                try:
+                    if self.fan_manager.run_follow_back_task():
+                        logger.info("回关任务执行成功")
+                    else:
+                        logger.warning("回关任务执行失败，检查浏览器状态")
+                        if not self.browser_manager.check_and_restart_browser():
+                            logger.error("浏览器状态异常，无法继续执行任务")
+                            return {'success': False, 'reason': '浏览器状态异常'}
+                except Exception as e:
+                    logger.error(f"执行回关任务时出错: {str(e)}")
+                    self.handle_task_failure("执行回关任务时出错", e)
+            else:
+                logger.info("回关功能已禁用，跳过回关任务")
+            
+            # 执行关注粉丝任务（视频评论者和群组成员）
+            if follow_video_fans_enabled or follow_group_fans_enabled:
+                try:
+                    # 更新配置中的视频和群组关注开关
+                    self.follow_fans_manager.config['features'] = {
+                        'follow_video_fans': follow_video_fans_enabled,
+                        'follow_group_fans': follow_group_fans_enabled
+                    }
+                    
+                    if self.follow_fans_manager.run_follow_fans_task():
+                        logger.info("关注粉丝任务执行成功")
+                    else:
+                        logger.warning("关注粉丝任务执行失败，检查浏览器状态")
+                        if not self.browser_manager.check_and_restart_browser():
+                            logger.error("浏览器状态异常，无法继续执行任务")
+                            return {'success': False, 'reason': '浏览器状态异常'}
+                except Exception as e:
+                    logger.error(f"执行关注粉丝任务时出错: {str(e)}")
+                    self.handle_task_failure("执行关注粉丝任务时出错", e)
+            else:
+                logger.info("关注视频评论者和群组成员功能已禁用，跳过关注粉丝任务")
             
             return {'success': True}
         except Exception as e:
@@ -259,142 +324,3 @@ class TaskRunner:
             logger.error(f"执行取关任务失败: {str(e)}")
             self.handle_task_failure("执行取关任务失败", e, "unfollow_task_error")
             return False
-        
-    def run_follow_fans_task(self):
-        """
-        执行关注粉丝任务
-        """
-        # 检查今日关注数量是否已达上限
-        max_follow_per_day = self.config.get('operation', {}).get('daily_follow_limit', 150)
-        today_follows = self.db.get_today_follow_count()
-        
-        if today_follows < max_follow_per_day:
-            logger.info(f"今日已关注: {today_follows}, 上限: {max_follow_per_day}")
-            
-            # 获取目标用户列表
-            target_users = self.config.get('target_users', [])
-            
-            if not target_users:
-                logger.warning("未配置目标用户，跳过关注粉丝任务")
-                return False
-            
-            # 获取未处理的目标用户
-            unprocessed_users = self.db.get_unprocessed_target_users(target_users)
-            
-            if not unprocessed_users:
-                logger.info("所有目标用户今日已处理，跳过关注粉丝任务")
-                return True
-            
-            # 随机选择一个目标用户
-            target_user = random.choice(unprocessed_users)
-            logger.info(f"选择目标用户: {target_user}")
-            
-            try:
-                # 访问目标用户主页
-                self.driver.get(f"https://www.douyin.com/user/{target_user}")
-                self.random_sleep(3, 5)
-                
-                # 点击粉丝按钮
-                try:
-                    fans_button = self.driver.find_element(By.XPATH, "//div[contains(@class, 'count-item') and contains(., '粉丝')]")
-                    fans_button.click()
-                    self.random_sleep(2, 3)
-                except Exception as e:
-                    logger.error(f"点击粉丝按钮失败: {str(e)}")
-                    self.handle_task_failure("点击粉丝按钮失败", e, "fans_button_error")
-                    return False
-                
-                # 获取粉丝列表
-                fans_items = []
-                try:
-                    # 使用更精确的选择器
-                    fans_items = self.driver.find_elements(By.XPATH, "//div[contains(@class, 'i5U4dMnB')]")
-                    if not fans_items:
-                        # 尝试备用选择器
-                        fans_items = self.driver.find_elements(By.XPATH, "//div[contains(@class, 'user-item')]")
-                    
-                    logger.info(f"找到 {len(fans_items)} 个粉丝")
-                except Exception as e:
-                    logger.error(f"获取粉丝列表失败: {str(e)}")
-                    self.handle_task_failure("获取粉丝列表失败", e, "fans_list_error")
-                    return False
-                
-                # 关注粉丝
-                follow_count = 0
-                max_follows = min(max_follow_per_day - today_follows, 20)  # 每次最多关注20个
-                
-                for i, fan_item in enumerate(fans_items):
-                    if follow_count >= max_follows:
-                        logger.info(f"已达到本次关注上限: {max_follows}")
-                        break
-                    
-                    try:
-                        # 提取粉丝信息
-                        fan_info = {}
-                        
-                        # 提取用户名
-                        try:
-                            username_element = fan_item.find_element(By.XPATH, ".//p[contains(@class, 'kUKK9Qal')]")
-                            fan_info['username'] = username_element.text.strip()
-                        except:
-                            try:
-                                # 尝试备用选择器
-                                username_element = fan_item.find_element(By.XPATH, ".//span[contains(@class, 'nickname')]")
-                                fan_info['username'] = username_element.text.strip()
-                            except:
-                                logger.warning(f"无法获取第 {i+1} 个粉丝的用户名")
-                                continue
-                        
-                        # 提取用户ID
-                        try:
-                            link_element = fan_item.find_element(By.XPATH, ".//a[contains(@href, '/user/')]")
-                            href = link_element.get_attribute('href')
-                            if href and '/user/' in href:
-                                fan_info['user_id'] = href.split('/user/')[-1].split('?')[0]
-                            else:
-                                logger.warning(f"无法从链接提取用户ID: {href}")
-                                continue
-                        except:
-                            logger.warning(f"无法获取第 {i+1} 个粉丝的用户ID")
-                            continue
-                        
-                        # 检查是否已关注
-                        if self.db.is_followed(fan_info['user_id']):
-                            logger.info(f"已关注用户: {fan_info['username']} ({fan_info['user_id']}), 跳过")
-                            continue
-                        
-                        # 关注用户
-                        if self.follow_manager.follow_user(fan_info):
-                            follow_count += 1
-                            self.today_follows += 1
-                            logger.info(f"成功关注用户: {fan_info['username']} ({fan_info['user_id']}), 当前进度: {follow_count}/{max_follows}")
-                            self.random_sleep(5, 10)  # 关注后等待一段时间
-                        else:
-                            logger.warning(f"关注用户失败: {fan_info['username']} ({fan_info['user_id']})")
-                            self.random_sleep(3, 5)
-                    except Exception as e:
-                        logger.error(f"处理粉丝项时出错: {str(e)}")
-                        self.random_sleep(2, 4)
-                        continue
-                
-                # 标记目标用户为已处理
-                self.db.mark_target_user_processed(target_user, follow_count)
-                logger.info(f"目标用户 {target_user} 已处理, 关注了 {follow_count} 个粉丝")
-                
-                # 返回个人主页
-                try:
-                    self.driver.get("https://www.douyin.com/user")
-                    logger.info("通过URL返回个人主页: https://www.douyin.com/user/self")
-                    self.random_sleep(2, 3)
-                except Exception as e:
-                    self.handle_task_failure("返回个人主页失败", e)
-                    
-            except Exception as e:
-                logger.error(f"关注粉丝任务失败: {str(e)}")
-                self.handle_task_failure("关注粉丝任务失败", e, "follow_fans_error")
-                return False
-                
-            return True
-        else:
-            logger.info(f"已达到每日关注上限: {self.config.get('operation', {}).get('daily_follow_limit', 150)}")
-            return True

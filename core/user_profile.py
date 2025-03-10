@@ -101,192 +101,98 @@ class UserProfileManager:
             
     def click_fans_tab(self):
         """
-        点击粉丝标签
+        点击粉丝标签并获取粉丝数量
         
         返回:
-            成功返回True，失败抛出异常
+            成功返回(True, fans_count)，失败抛出异常
         """
         try:
-            # 保存点击前的URL
+            # 保存点击前的URL和截图
             before_url = self.driver.current_url
             logger.info(f"点击粉丝标签前的URL: {before_url}")
-            
-            # 保存点击前的截图和HTML源码
             save_screenshot(self.driver, "before_click_fans", level="CRITICAL")
             save_html(self.driver, "before_click_fans")
             
-            # 首先尝试通过URL参数切换到粉丝标签
-            current_url = self.driver.current_url
-            if "tab=fans_tab" not in current_url and "follower" not in current_url:
-                # 构建粉丝标签URL
-                if "?" in current_url:
-                    fans_url = current_url.split("?")[0] + "?tab=fans_tab"
+            # 尝试查找新版粉丝按钮
+            logger.info("尝试查找新版粉丝按钮...")
+            
+            try:
+                # 使用精确的选择器查找新版粉丝按钮
+                new_fans_selector = '//div[@data-e2e="user-info-fans"]'
+                logger.info(f"尝试使用新版粉丝按钮选择器: {new_fans_selector}")
+                
+                fans_button = self.driver.find_element(By.XPATH, new_fans_selector)
+                logger.info("找到新版粉丝按钮")
+                
+                # 获取粉丝数量
+                try:
+                    fans_count_element = fans_button.find_element(By.XPATH, './/div[contains(@class, "C1cxu0Vq")]')
+                    fans_count_text = fans_count_element.text
+                    fans_count = int(fans_count_text.replace('万', '0000').replace('亿', '00000000'))
+                    logger.info(f"获取到粉丝数量: {fans_count}")
+                except Exception as e:
+                    logger.warning(f"获取粉丝数量失败: {str(e)}")
+                    fans_count = 0
+                
+                # 记录元素信息
+                element_text = fans_button.text
+                element_class = fans_button.get_attribute("class")
+                element_data_e2e = fans_button.get_attribute("data-e2e")
+                logger.info(f"新版粉丝按钮信息: 文本='{element_text}', 类名='{element_class}', data-e2e='{element_data_e2e}'")
+                
+                # 滚动到元素位置
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", fans_button)
+                self.random_sleep(1, 2)
+                
+                # 使用JavaScript点击
+                logger.info("使用JavaScript点击新版粉丝按钮")
+                self.driver.execute_script("arguments[0].click();", fans_button)
+                self.random_sleep(3, 5)
+                
+                # 保存点击后的截图
+                save_screenshot(self.driver, "after_click_new_fans_button", level="CRITICAL")
+                
+                # 等待粉丝列表容器出现
+                container_selectors = [
+                    "//div[@data-e2e='user-fans-container']",
+                    "//div[contains(@class, 'FjupSA6k')]"
+                ]
+                
+                container_found = False
+                max_retries = 3
+                retry_count = 0
+                
+                while not container_found and retry_count < max_retries:
+                    for selector in container_selectors:
+                        try:
+                            self.wait.until(
+                                EC.presence_of_element_located((By.XPATH, selector))
+                            )
+                            logger.info(f"检测到粉丝列表容器: {selector}")
+                            container_found = True
+                            break
+                        except:
+                            continue
+                    
+                    if not container_found:
+                        retry_count += 1
+                        if retry_count < max_retries:
+                            logger.warning(f"未检测到粉丝列表容器，第 {retry_count} 次重试...")
+                            self.random_sleep(2, 3)
+                            # 重新点击
+                            self.driver.execute_script("arguments[0].click();", fans_button)
+                            self.random_sleep(3, 5)
+                
+                if container_found:
+                    logger.info("成功加载粉丝列表")
+                    return True, fans_count
                 else:
-                    fans_url = current_url + "?tab=fans_tab"
+                    logger.error("无法加载粉丝列表")
+                    raise Exception("无法加载粉丝列表")
                 
-                logger.info(f"通过URL参数切换到粉丝标签: {fans_url}")
-                self.driver.get(fans_url)
-                self.random_sleep(3, 5)
-                
-                # 保存URL切换后的截图
-                save_screenshot(self.driver, "after_url_fans", level="CRITICAL")
-                
-                # 检查URL是否包含粉丝标签参数
-                if "tab=fans_tab" in self.driver.current_url or "follower" in self.driver.current_url:
-                    logger.info("成功通过URL切换到粉丝标签")
-                    return True
-            
-            # 如果URL切换失败，尝试点击粉丝标签
-            logger.info("URL切换失败或不适用，尝试点击粉丝标签...")
-            
-            # 尝试所有可能的粉丝标签选择器
-            for selector in USER_PROFILE['FANS_TAB']:
-                try:
-                    logger.info(f"尝试使用选择器: {selector}")
-                    fans_tab = self.wait.until(
-                        EC.element_to_be_clickable((By.XPATH, selector))
-                    )
-                    
-                    # 记录元素信息
-                    element_text = fans_tab.text
-                    element_class = fans_tab.get_attribute("class")
-                    logger.info(f"找到粉丝标签元素: 文本='{element_text}', 类名='{element_class}'")
-                    
-                    # 滚动到元素位置
-                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", fans_tab)
-                    self.random_sleep(2, 3)
-                    
-                    # 尝试点击
-                    try:
-                        fans_tab.click()
-                        logger.info(f"成功点击粉丝标签: {element_text}")
-                        self.random_sleep(3, 5)
-                    except ElementClickInterceptedException:
-                        # 如果常规点击失败，尝试JavaScript点击
-                        self.driver.execute_script("arguments[0].click();", fans_tab)
-                        logger.info(f"使用JavaScript点击粉丝标签: {element_text}")
-                        self.random_sleep(3, 5)
-                    
-                    # 保存点击后的截图
-                    save_screenshot(self.driver, "after_click_fans", level="CRITICAL")
-                    
-                    # 验证点击是否成功 - 检查URL或页面内容变化
-                    after_url = self.driver.current_url
-                    if after_url != before_url or "tab=fans_tab" in after_url or "follower" in after_url:
-                        logger.info(f"URL已变化，点击成功: {after_url}")
-                        return True
-                    
-                    # 检查页面内容是否包含粉丝列表
-                    try:
-                        # 等待粉丝列表出现
-                        self.wait.until(
-                            lambda driver: len(driver.find_elements(By.XPATH, '//div[contains(@class, "user-item")]')) > 0 or
-                                         len(driver.find_elements(By.XPATH, '//div[contains(@class, "user-card")]')) > 0
-                        )
-                        logger.info("检测到粉丝列表元素，点击成功")
-                        return True
-                    except TimeoutException:
-                        logger.warning("未检测到粉丝列表元素，点击可能失败")
-                        # 继续尝试其他选择器
-                        
-                except (TimeoutException, NoSuchElementException, ElementClickInterceptedException):
-                    continue
-            
-            # 如果所有选择器都失败，尝试特定的选择器
-            logger.info("常规选择器失败，尝试特定选择器...")
-            specific_selectors = [
-                '//div[contains(@class, "tab-container")]//div[contains(text(), "粉丝")]',
-                '//div[contains(@class, "count-item") and contains(., "粉丝")]',
-                '//div[contains(@class, "author-card")]//div[contains(text(), "粉丝")]',
-                '//div[contains(@class, "count-item") and .//span[contains(text(), "粉丝")]]',
-                '//div[contains(@class, "tab-item") and .//span[contains(text(), "粉丝")]]',
-                '//div[contains(@class, "tab-item") and contains(., "粉丝")]',
-                '//div[contains(@class, "author-info-count")]//div[contains(text(), "粉丝") and contains(text(), "万")]',
-                '//div[contains(@class, "author-info-count")]//span[contains(text(), "粉丝") and contains(text(), "万")]',
-                '//div[contains(@class, "author-info-count")]//div[contains(text(), "粉丝") and contains(text(), "亿")]',
-                '//div[contains(@class, "author-info-count")]//span[contains(text(), "粉丝") and contains(text(), "亿")]',
-                '//div[contains(@class, "author-info-count")]//div[contains(text(), "粉丝") and contains(text(), "0") or contains(text(), "1") or contains(text(), "2") or contains(text(), "3") or contains(text(), "4") or contains(text(), "5") or contains(text(), "6") or contains(text(), "7") or contains(text(), "8") or contains(text(), "9")]',
-                '//div[contains(@class, "author-info-count")]//span[contains(text(), "粉丝") and contains(text(), "0") or contains(text(), "1") or contains(text(), "2") or contains(text(), "3") or contains(text(), "4") or contains(text(), "5") or contains(text(), "6") or contains(text(), "7") or contains(text(), "8") or contains(text(), "9")]'
-            ]
-            
-            # 尝试所有特定选择器
-            for selector in specific_selectors:
-                try:
-                    logger.info(f"尝试使用特定选择器: {selector}")
-                    element = self.wait.until(
-                        EC.element_to_be_clickable((By.XPATH, selector))
-                    )
-                    
-                    # 记录元素信息
-                    element_text = element.text
-                    element_class = element.get_attribute("class")
-                    logger.info(f"找到粉丝标签元素: 文本='{element_text}', 类名='{element_class}'")
-                    
-                    # 滚动到元素位置
-                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
-                    self.random_sleep(2, 3)
-                    
-                    # 尝试点击
-                    try:
-                        element.click()
-                        logger.info(f"成功点击粉丝标签: {element_text}")
-                        self.random_sleep(3, 5)
-                    except ElementClickInterceptedException:
-                        # 如果常规点击失败，尝试JavaScript点击
-                        self.driver.execute_script("arguments[0].click();", element)
-                        logger.info(f"使用JavaScript点击粉丝标签: {element_text}")
-                        self.random_sleep(3, 5)
-                    
-                    # 保存点击后的截图
-                    save_screenshot(self.driver, "after_click_fans", level="CRITICAL")
-                    
-                    # 验证点击是否成功 - 检查URL或页面内容变化
-                    after_url = self.driver.current_url
-                    if after_url != before_url or "tab=fans_tab" in after_url or "follower" in after_url:
-                        logger.info(f"URL已变化，点击成功: {after_url}")
-                        return True
-                    
-                    # 检查页面内容是否包含粉丝列表
-                    try:
-                        # 等待粉丝列表出现
-                        self.wait.until(
-                            lambda driver: len(driver.find_elements(By.XPATH, '//div[contains(@class, "user-item")]')) > 0 or
-                                         len(driver.find_elements(By.XPATH, '//div[contains(@class, "user-card")]')) > 0
-                        )
-                        logger.info("检测到粉丝列表元素，点击成功")
-                        return True
-                    except TimeoutException:
-                        logger.warning("未检测到粉丝列表元素，点击可能失败")
-                        # 继续尝试其他选择器
-                        
-                except (TimeoutException, NoSuchElementException, ElementClickInterceptedException):
-                    continue
-            
-            # 如果所有方法都失败，尝试最后的方法：直接修改URL
-            logger.info("所有点击方法失败，尝试直接修改URL...")
-            
-            # 提取用户ID
-            current_url = self.driver.current_url
-            user_id_match = re.search(r'/user/([^/?]+)', current_url)
-            
-            if user_id_match:
-                user_id = user_id_match.group(1)
-                fans_url = f"https://www.douyin.com/user/{user_id}?tab=fans_tab"
-                logger.info(f"通过URL参数切换到粉丝标签: {fans_url}")
-                self.driver.get(fans_url)
-                self.random_sleep(3, 5)
-                
-                # 保存URL切换后的截图
-                save_screenshot(self.driver, "after_url_fans", level="CRITICAL")
-                
-                # 检查URL是否包含粉丝标签参数
-                if "tab=fans_tab" in self.driver.current_url:
-                    logger.info("成功通过URL切换到粉丝标签")
-                    return True
-            
-            # 如果所有方法都失败，抛出异常
-            save_screenshot(self.driver, "error", level="ERROR")
-            raise Exception("无法点击粉丝标签")
+            except NoSuchElementException:
+                logger.warning("未找到新版粉丝按钮，尝试其他选择器")
+                raise
             
         except Exception as e:
             logger.error(f"点击粉丝标签失败: {str(e)}")

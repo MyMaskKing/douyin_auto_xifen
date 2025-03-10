@@ -8,6 +8,7 @@ from .browser import BrowserManager
 from .user_profile import UserProfileManager
 from .fan_manager import FanManager
 from .follow_manager import FollowListManager
+from .follow_fans_manager import FollowFansManager
 from .task_runner import TaskRunner
 from .logger import logger
 
@@ -28,6 +29,7 @@ class DouyinBot:
         self.user_profile_manager = None
         self.fan_manager = None
         self.follow_manager = None
+        self.follow_fans_manager = None
         self.task_runner = None
         
     def start(self):
@@ -46,10 +48,13 @@ class DouyinBot:
             self.user_profile_manager = UserProfileManager(self.browser_manager)
             
             # 初始化粉丝管理器
-            self.fan_manager = FanManager(self.browser_manager, self.user_profile_manager)
+            self.fan_manager = FanManager(self.browser_manager, self.user_profile_manager, self.db, self.config)
             
             # 初始化关注管理器
             self.follow_manager = FollowListManager(self.browser_manager, self.db, self.config)
+            
+            # 初始化粉丝关注管理器
+            self.follow_fans_manager = FollowFansManager(self.browser_manager, self.db, self.config)
             
             # 初始化任务运行器
             self.task_runner = TaskRunner(

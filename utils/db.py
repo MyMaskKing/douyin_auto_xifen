@@ -28,6 +28,20 @@ class Database:
                 )
             ''')
             
+            # 粉丝记录表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS fans (
+                    user_id TEXT PRIMARY KEY,
+                    username TEXT,
+                    first_seen_time TIMESTAMP,
+                    last_seen_time TIMESTAMP,
+                    follow_status TEXT,
+                    is_processed INTEGER DEFAULT 0,
+                    need_follow_back INTEGER DEFAULT 0,
+                    follow_back_time TIMESTAMP
+                )
+            ''')
+            
             # 检查unfollow_time列是否存在，如果不存在则添加
             cursor.execute("PRAGMA table_info(follows)")
             columns = cursor.fetchall()
@@ -454,4 +468,181 @@ class Database:
                 
         except Exception as e:
             logger.error(f"标记用户为待取关失败: {str(e)}")
+            return False
+            
+    def mark_user_for_follow_back(self, user_id, username):
+        """
+        将用户标记为待回关
+        
+        参数:
+            user_id: 用户ID
+            username: 用户名
+            
+        返回:
+            bool: 是否成功标记
+        """
+        try:
+            now = datetime.now()
+            cursor = self.conn.cursor()
+            
+            # 检查用户是否已在粉丝表中
+            cursor.execute(
+                "SELECT follow_status, need_follow_back FROM fans WHERE user_id = ?",
+                (user_id,)
+            )
+            
+            result = cursor.fetchone()
+            
+            if result:
+                follow_status, need_follow_back = result
+                
+                # 如果用户已经被标记为待回关，不需要再标记
+                if need_follow_back == 1:
+                    logger.info(f"用户 {username} 已经被标记为待回关")
+                    return True
+                
+                # 更新用户状态
+                cursor.execute(
+                    """
+                    UPDATE fans 
+                    SET follow_status = ?, need_follow_back = 1, last_seen_time = ?
+                    WHERE user_id = ?
+                    """,
+                    ("need_follow_back", now, user_id)
+                )
+            else:
+                # 添加新的粉丝记录
+                cursor.execute(
+                    """
+                    INSERT INTO fans (
+                        user_id, username, first_seen_time, last_seen_time,
+                        follow_status, need_follow_back
+                    ) VALUES (?, ?, ?, ?, ?, 1)
+                    """,
+                    (user_id, username, now, now, "need_follow_back")
+                )
+            
+            self.conn.commit()
+            logger.info(f"已标记用户 {username} 为待回关")
+            return True
+            
+        except Exception as e:
+            logger.error(f"标记用户为待回关失败: {str(e)}")
+            return False
+            
+    def get_users_to_follow_back(self, limit=50):
+        """
+        获取需要回关的用户列表
+        
+        参数:
+            limit: 最大返回数量
+            
+        返回:
+            包含用户ID和用户名的字典列表 [{'user_id': '123', 'username': 'user1'}, ...]
+        """
+        try:
+            cursor = self.conn.cursor()
+            
+            cursor.execute(
+                """
+                SELECT user_id, username 
+                FROM fans 
+                WHERE need_follow_back = 1 
+                AND follow_back_time IS NULL
+                ORDER BY first_seen_time ASC
+                LIMIT ?
+                """,
+                (limit,)
+            )
+            
+            return [{'user_id': row[0], 'username': row[1]} for row in cursor.fetchall()]
+            
+        except Exception as e:
+            logger.error(f"获取待回关用户失败: {str(e)}")
+            return []
+            
+    def mark_user_followed_back(self, user_id):
+        """
+        标记用户已回关
+        
+        参数:
+            user_id: 用户ID
+            
+        返回:
+            bool: 是否成功标记
+        """
+        try:
+            now = datetime.now()
+            cursor = self.conn.cursor()
+            
+            # 更新粉丝记录
+            cursor.execute(
+                """
+                UPDATE fans 
+                SET follow_status = 'followed_back',
+                    need_follow_back = 0,
+                    follow_back_time = ?,
+                    is_processed = 1
+                WHERE user_id = ?
+                """,
+                (now, user_id)
+            )
+            
+            # 添加关注记录
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO follows (
+                    user_id, username, follow_time, is_following
+                )
+                SELECT user_id, username, ?, 1
+                FROM fans
+                WHERE user_id = ?
+                """,
+                (now, user_id)
+            )
+            
+            self.conn.commit()
+            logger.info(f"已标记用户 {user_id} 为已回关")
+            return True
+            
+        except Exception as e:
+            logger.error(f"标记用户已回关失败: {str(e)}")
+            return False
+            
+    def get_today_follow_back_count(self):
+        """获取今日回关数量"""
+        try:
+            cursor = self.conn.cursor()
+            today = datetime.now().date()
+            
+            cursor.execute(
+                """
+                SELECT COUNT(*) 
+                FROM fans 
+                WHERE date(follow_back_time) = date(?)
+                AND follow_status = 'followed_back'
+                """,
+                (today,)
+            )
+            
+            return cursor.fetchone()[0]
+            
+        except Exception as e:
+            logger.error(f"获取今日回关数量失败: {str(e)}")
+            return 0
+            
+    def is_fan_processed(self, user_id):
+        """检查粉丝是否已处理过"""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "SELECT is_processed FROM fans WHERE user_id = ?",
+                (user_id,)
+            )
+            
+            result = cursor.fetchone()
+            return result and result[0] == 1
+            
+        except Exception as e:
+            logger.error(f"检查粉丝处理状态失败: {str(e)}")
             return False 

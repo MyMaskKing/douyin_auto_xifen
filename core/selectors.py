@@ -6,6 +6,10 @@
 USER_PROFILE = {
     # 粉丝按钮 - 更新为更精确的选择器
     'FANS_TAB': [
+        # 新版抖音粉丝按钮选择器
+        '//div[contains(@class, "Q1A_pjwq") and contains(@class, "ELUP9h2u") and @data-e2e="user-info-fans"]',
+        '//div[@data-e2e="user-info-fans"]',
+        
         # 最常见的粉丝标签选择器
         '//div[contains(@class, "tab-bar")]//div[text()="粉丝"]',
         '//div[contains(@class, "tab-container")]//div[text()="粉丝"]',
