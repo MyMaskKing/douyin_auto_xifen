@@ -65,13 +65,16 @@ class TaskRunner:
     def run_tasks(self):
         """
         运行任务
+        
+        返回:
+            任务结果字典，包含任务类型和间隔时间等信息
         """
         try:
             # 检查浏览器状态
             logger.info("检查浏览器状态...")
             if not self.browser_manager.check_and_restart_browser():
                 logger.error("浏览器状态异常，无法执行任务")
-                return False
+                return {'success': False, 'reason': '浏览器状态异常'}
             
             # 执行取关任务
             try:
@@ -81,7 +84,7 @@ class TaskRunner:
                     logger.warning("取关任务执行失败，检查浏览器状态")
                     if not self.browser_manager.check_and_restart_browser():
                         logger.error("浏览器状态异常，无法继续执行任务")
-                        return False
+                        return {'success': False, 'reason': '浏览器状态异常'}
             except Exception as e:
                 logger.error(f"执行取关任务时出错: {str(e)}")
                 self.handle_task_failure("执行取关任务时出错", e)
@@ -89,13 +92,19 @@ class TaskRunner:
             # 执行检查关注列表任务
             try:
                 if self.follow_list_manager.run_check_follows_task():
-                    logger.info("检查关注列表任务完成，休息 3600 秒后执行下一轮任务")
-                    return True
+                    # 获取配置的任务间隔时间
+                    task_interval = self.config.get('task', {}).get('check_follows_interval', 3600)  # 默认1小时
+                    logger.info(f"检查关注列表任务完成，休息 {task_interval} 秒后执行下一轮任务")
+                    return {
+                        'success': True,
+                        'task_type': 'check_follows',
+                        'interval': task_interval
+                    }
                 else:
                     logger.warning("检查关注列表任务执行失败，检查浏览器状态")
                     if not self.browser_manager.check_and_restart_browser():
                         logger.error("浏览器状态异常，无法继续执行任务")
-                        return False
+                        return {'success': False, 'reason': '浏览器状态异常'}
             except Exception as e:
                 logger.error(f"执行检查关注列表任务时出错: {str(e)}")
                 self.handle_task_failure("执行检查关注列表任务时出错", e)
@@ -108,16 +117,16 @@ class TaskRunner:
                     logger.warning("关注粉丝任务执行失败，检查浏览器状态")
                     if not self.browser_manager.check_and_restart_browser():
                         logger.error("浏览器状态异常，无法继续执行任务")
-                        return False
+                        return {'success': False, 'reason': '浏览器状态异常'}
             except Exception as e:
                 logger.error(f"执行关注粉丝任务时出错: {str(e)}")
                 self.handle_task_failure("执行关注粉丝任务时出错", e)
             
-            return True
+            return {'success': True}
         except Exception as e:
             logger.error(f"执行任务时出错: {str(e)}")
             self.handle_task_failure("执行任务时出错", e)
-            return False
+            return {'success': False, 'reason': str(e)}
         
     def run_unfollow_task(self):
         """

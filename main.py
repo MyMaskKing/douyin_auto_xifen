@@ -96,10 +96,17 @@ def main():
                     break
                     
                 # 运行任务
-                bot.run_tasks()
+                task_result = bot.run_tasks()
                 
-                # 休息一段时间
-                time.sleep(10)
+                # 根据任务结果决定休息时间
+                if task_result and task_result.get('task_type') == 'check_follows':
+                    # 如果是检查关注列表任务完成，等待配置的间隔时间
+                    interval = task_result.get('interval', 3600)
+                    logger.info(f"检查关注列表任务完成，休息 {interval} 秒后执行下一轮任务")
+                    time.sleep(interval)
+                else:
+                    # 其他任务完成后的默认休息时间
+                    time.sleep(10)
                 
             except Exception as e:
                 logger.error(f"运行任务时出错: {str(e)}")

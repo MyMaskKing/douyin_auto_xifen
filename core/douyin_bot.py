@@ -72,11 +72,11 @@ class DouyinBot:
         运行任务
         
         返回:
-            成功返回True，失败返回False
+            任务结果字典，包含任务类型和间隔时间等信息
         """
         if not self.task_runner:
             logger.error("任务运行器未初始化，请先调用start方法")
-            return False
+            return {'success': False, 'reason': '任务运行器未初始化'}
             
         return self.task_runner.run_tasks()
         
