@@ -151,8 +151,11 @@ class TaskRunner:
                 logger.info("今日取关数量已达上限，跳过取关任务")
                 return True
             
+            # 获取取关天数阈值
+            unfollow_days = self.config.get('operation', {}).get('unfollow_days', 3)
+            
             # 获取需要取关的用户
-            users_to_unfollow = self.db.get_users_to_unfollow(remaining_unfollow)
+            users_to_unfollow = self.db.get_users_to_unfollow(remaining_unfollow, unfollow_days)
             
             if not users_to_unfollow:
                 logger.info("没有找到需要取关的用户")

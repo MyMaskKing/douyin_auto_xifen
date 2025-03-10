@@ -182,27 +182,48 @@ class Database:
             logger.error(f"获取未回关用户失败: {str(e)}")
             return []
             
-    def get_users_to_unfollow(self, limit=100):
+    def get_users_to_unfollow(self, limit=100, unfollow_days=3):
         """
         获取需要取关的用户列表
         
         参数:
             limit: 最大返回数量
+            unfollow_days: 关注天数阈值，只返回关注时间超过该天数的用户
+                          当unfollow_days=0时，返回所有标记为待取关的用户，不考虑关注时间
             
         返回:
             包含用户ID和用户名的字典列表 [{'user_id': '123', 'username': 'user1'}, ...]
         """
         try:
             cursor = self.conn.cursor()
-            cursor.execute(
-                """
-                SELECT user_id, username FROM follows 
-                WHERE is_following = 1 AND should_unfollow = 1
-                ORDER BY marked_for_unfollow_time ASC
-                LIMIT ?
-                """,
-                (limit,)
-            )
+            now = datetime.now()
+            
+            if unfollow_days == 0:
+                # 当unfollow_days为0时，返回所有标记为待取关的用户
+                cursor.execute(
+                    """
+                    SELECT user_id, username FROM follows 
+                    WHERE is_following = 1 AND should_unfollow = 1
+                    ORDER BY marked_for_unfollow_time ASC
+                    LIMIT ?
+                    """,
+                    (limit,)
+                )
+            else:
+                # 计算关注时间阈值
+                threshold_date = (now - timedelta(days=unfollow_days)).isoformat()
+                
+                # 返回关注时间超过阈值且标记为待取关的用户
+                cursor.execute(
+                    """
+                    SELECT user_id, username FROM follows 
+                    WHERE is_following = 1 AND should_unfollow = 1 AND follow_time <= ?
+                    ORDER BY marked_for_unfollow_time ASC
+                    LIMIT ?
+                    """,
+                    (threshold_date, limit)
+                )
+            
             return [{'user_id': row[0], 'username': row[1]} for row in cursor.fetchall()]
             
         except Exception as e:
@@ -383,8 +404,7 @@ class Database:
         参数:
             user_id: 用户ID
             username: 用户名
-            days: 关注天数阈值，超过该天数才会被标记为待取关
-                  当days=0时，立即标记为待取关，不考虑关注时间
+            days: 参数已废弃，保留是为了兼容性，实际判断逻辑已移至get_users_to_unfollow方法
         
         返回:
             bool: 是否成功标记
@@ -395,14 +415,14 @@ class Database:
             
             # 检查用户是否已在关注列表中
             cursor.execute(
-                "SELECT follow_time, is_following, should_unfollow FROM follows WHERE user_id = ?",
+                "SELECT is_following, should_unfollow FROM follows WHERE user_id = ?",
                 (user_id,)
             )
             
             result = cursor.fetchone()
             
             if result:
-                follow_time, is_following, should_unfollow = result
+                is_following, should_unfollow = result
                 
                 # 如果用户已经被取关，不需要再标记
                 if is_following == 0:
@@ -414,42 +434,14 @@ class Database:
                     logger.info(f"用户 {username} 已经被标记为待取关")
                     return True
                 
-                # 如果days为0，立即标记为待取关，不考虑关注时间
-                if days == 0:
-                    cursor.execute(
-                        "UPDATE follows SET should_unfollow = 1, marked_for_unfollow_time = ? WHERE user_id = ?",
-                        (now, user_id)
-                    )
-                    self.conn.commit()
-                    logger.info(f"已标记用户 {username} 为待取关（立即取关模式）")
-                    return True
-                    
-                # 检查关注时间是否超过指定天数
-                if follow_time:
-                    follow_date = datetime.fromisoformat(follow_time)
-                    days_followed = (datetime.fromisoformat(now) - follow_date).days
-                    
-                    if days_followed >= days:
-                        # 标记为待取关
-                        cursor.execute(
-                            "UPDATE follows SET should_unfollow = 1, marked_for_unfollow_time = ? WHERE user_id = ?",
-                            (now, user_id)
-                        )
-                        self.conn.commit()
-                        logger.info(f"已标记用户 {username} 为待取关，已关注 {days_followed} 天")
-                        return True
-                    else:
-                        logger.info(f"用户 {username} 关注时间 {days_followed} 天，未达到取关条件 {days} 天")
-                        return False
-                else:
-                    # 如果没有关注时间记录，默认标记为待取关
-                    cursor.execute(
-                        "UPDATE follows SET should_unfollow = 1, marked_for_unfollow_time = ? WHERE user_id = ?",
-                        (now, user_id)
-                    )
-                    self.conn.commit()
-                    logger.info(f"已标记用户 {username} 为待取关（无关注时间记录）")
-                    return True
+                # 标记为待取关
+                cursor.execute(
+                    "UPDATE follows SET should_unfollow = 1, marked_for_unfollow_time = ? WHERE user_id = ?",
+                    (now, user_id)
+                )
+                self.conn.commit()
+                logger.info(f"已标记用户 {username} 为待取关")
+                return True
             else:
                 # 如果用户不在关注列表中，添加记录并标记为待取关
                 cursor.execute(
