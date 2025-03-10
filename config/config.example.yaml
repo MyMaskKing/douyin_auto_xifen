@@ -6,8 +6,8 @@ account:
 # 目标配置
 target:
   users:  # 目标用户列表（想要涨粉的同类型账号）
-    - "user_id_1"  # 第一个目标用户
-    - "user_id_2"  # 第二个目标用户
+    - "user1"  # 第一个目标用户
+    - "user2"  # 第二个目标用户
   
 # 功能开关配置
 features:
@@ -19,9 +19,11 @@ features:
 operation:
   daily_follow_limit: 150  # 每日关注上限
   daily_unfollow_limit: 100  # 每日取关上限
-  follow_interval: [30, 60]  # 关注操作间隔（秒）
-  unfollow_interval: [20, 40]  # 取关操作间隔（秒）
+  follow_interval: [3, 8]  # 关注操作间隔（秒）
+  unfollow_interval: [5, 15]  # 取关操作间隔（秒）
   unfollow_days: 3  # 超过几天未回关则取关
+  unfollow_batch_size: 10  # 每批次处理的取关用户数量
+  unfollow_success_rate_threshold: 0.7  # 取关成功率阈值，低于此值则暂停取关任务
   max_fans_per_target: 50  # 每个目标用户最多处理的粉丝数
   
 # 工作时间配置

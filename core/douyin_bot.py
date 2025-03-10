@@ -7,7 +7,7 @@
 from .browser import BrowserManager
 from .user_profile import UserProfileManager
 from .fan_manager import FanManager
-from .follow_manager import FollowManager
+from .follow_manager import FollowListManager
 from .task_runner import TaskRunner
 from .logger import logger
 
@@ -49,7 +49,7 @@ class DouyinBot:
             self.fan_manager = FanManager(self.browser_manager, self.user_profile_manager)
             
             # 初始化关注管理器
-            self.follow_manager = FollowManager(self.browser_manager, self.db)
+            self.follow_manager = FollowListManager(self.browser_manager, self.db, self.config)
             
             # 初始化任务运行器
             self.task_runner = TaskRunner(

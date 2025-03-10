@@ -83,4 +83,19 @@ COMMON = {
         '//div[contains(@class, "im")]',           # 消息图标
         '//div[contains(@class, "notice")]'        # 通知图标
     ],
+    # 个人主页链接 - 用于检查登录状态
+    'PROFILE_LINK': [
+        '//div[contains(@class, "avatar")]',       # 头像元素通常可以点击进入个人主页
+        '//span[contains(@class, "login-name")]',  # 用户名通常可以点击进入个人主页
+        '//div[contains(@class, "user-info")]',    # 用户信息区域通常可以点击进入个人主页
+        '//a[contains(@href, "/user/")]'           # 指向用户主页的链接
+    ],
+    # 个人主页信息元素 - 用于验证是否成功进入个人主页
+    'PROFILE_INFO': [
+        '//div[contains(@class, "author-card")]',  # 作者卡片
+        '//div[contains(@class, "user-info")]',    # 用户信息区域
+        '//div[contains(@class, "personal-tab")]', # 个人标签页
+        '//div[contains(@class, "count-item")]',   # 计数项（粉丝数、关注数等）
+        '//div[contains(@class, "tab-bar")]'       # 标签栏
+    ],
 } 

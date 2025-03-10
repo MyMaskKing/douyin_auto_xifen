@@ -391,14 +391,72 @@ class FanManager:
                                     button = card.find_element(By.XPATH, './/div[@data-e2e="user-info-follow"] | .//button[contains(text(), "关注") and not(contains(text(), "已关注"))]')
                                     
                                     # 尝试查找用户名元素
-                                    name_element = card.find_element(By.XPATH, './/span[contains(@class, "name") or contains(@class, "nickname") or contains(@class, "title")] | .//div[contains(@class, "name") or contains(@class, "nickname") or contains(@class, "title")]')
-                                    
-                                    fan_items.append({
-                                        "element": card,
-                                        "button": button,
-                                        "name": name_element.text.strip()
-                                    })
+                                    try:
+                                        name_element = card.find_element(By.XPATH, './/span[contains(@class, "name") or contains(@class, "nickname") or contains(@class, "title")] | .//div[contains(@class, "name") or contains(@class, "nickname") or contains(@class, "title")]')
+                                        
+                                        fan_items.append({
+                                            "element": card,
+                                            "button": button,
+                                            "name": name_element.text.strip()
+                                        })
+                                    except NoSuchElementException:
+                                        # 尝试使用更精确的选择器
+                                        try:
+                                            # 根据提供的HTML结构，使用更精确的选择器
+                                            username_selectors = [
+                                                './/span[contains(@class, "arnSiSbK")]',
+                                                './/a[contains(@class, "uz1VJwFY")]//span//span[contains(@class, "arnSiSbK")]',
+                                                './/div[contains(@class, "kUKK9Qal")]//a//span//span[contains(@class, "arnSiSbK")]',
+                                                './/div[contains(@class, "X8ljGzft")]//div[contains(@class, "kUKK9Qal")]//a//span',
+                                                './/a[contains(@href, "/user/")]//span'
+                                            ]
+                                            
+                                            username = "未知用户"
+                                            for selector in username_selectors:
+                                                name_elements = card.find_elements(By.XPATH, selector)
+                                                if name_elements:
+                                                    text_content = name_elements[0].text.strip()
+                                                    if text_content:
+                                                        username = text_content
+                                                        logger.info(f"通过选择器 {selector} 找到用户名: {username}")
+                                                        break
+                                            
+                                            # 如果上述方法未能提取用户名，尝试使用JavaScript
+                                            if username == "未知用户":
+                                                try:
+                                                    username = self.driver.execute_script("""
+                                                        var element = arguments[0];
+                                                        // 尝试查找arnSiSbK类的span元素
+                                                        var nameElements = element.querySelectorAll('span.arnSiSbK');
+                                                        if (nameElements.length > 0) {
+                                                            return nameElements[0].textContent.trim();
+                                                        }
+                                                        
+                                                        // 尝试查找所有嵌套的span元素
+                                                        var spans = element.querySelectorAll('span span span');
+                                                        for (var i = 0; i < spans.length; i++) {
+                                                            var text = spans[i].textContent.trim();
+                                                            if (text && text.length > 0) {
+                                                                return text;
+                                                            }
+                                                        }
+                                                        
+                                                        return "未知用户";
+                                                    """, card)
+                                                    if username != "未知用户":
+                                                        logger.info(f"通过JavaScript找到用户名: {username}")
+                                                except Exception as e:
+                                                    logger.warning(f"使用JavaScript提取用户名失败: {str(e)}")
+                                            
+                                            fan_items.append({
+                                                "element": card,
+                                                "button": button,
+                                                "name": username
+                                            })
+                                        except Exception as e:
+                                            logger.warning(f"提取用户名失败: {str(e)}")
                                 except NoSuchElementException:
+                                    # 如果找不到关注按钮，跳过此卡片
                                     continue
                             
                             if fan_items:

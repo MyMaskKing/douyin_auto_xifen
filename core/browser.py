@@ -168,19 +168,262 @@ class BrowserManager:
             logger.info("浏览器已关闭")
 
     def is_browser_closed(self):
-        """检查浏览器窗口是否已关闭"""
-        if self.driver is None:
-            logger.info("浏览器未初始化")
-            return True
-            
+        """
+        检查浏览器是否已关闭
+        
+        返回:
+            如果浏览器已关闭返回True，否则返回False
+        """
         try:
-            # 尝试获取当前窗口句柄，如果浏览器已关闭会抛出异常
-            self.driver.current_window_handle
-            
-            # 尝试执行一个简单的JavaScript命令，如果浏览器已关闭会抛出异常
-            self.driver.execute_script("return navigator.userAgent")
-            
-            return False
+            # 检查窗口句柄
+            if self.driver and self.driver.window_handles:
+                window_handle = self.driver.window_handles[0]
+                logger.info(f"通过窗口句柄检测：浏览器窗口正常，句柄: {window_handle}")
+                
+                # 执行JavaScript检查
+                user_agent = self.driver.execute_script("return navigator.userAgent;")
+                logger.info(f"通过JavaScript执行检测：浏览器窗口正常，UserAgent: {user_agent[:50]}...")
+                
+                return False
         except Exception as e:
-            logger.info(f"检测到浏览器窗口已关闭: {str(e)}")
-            return True 
+            logger.warning(f"浏览器检测失败，可能已关闭: {str(e)}")
+            return True
+        
+        return True
+    
+    def is_browser_alive(self):
+        """
+        检查浏览器会话是否有效
+        
+        返回:
+            如果浏览器会话有效返回True，否则返回False
+        """
+        try:
+            # 尝试执行一个简单的JavaScript命令来检查会话是否有效
+            self.driver.execute_script("return 1;")
+            return True
+        except Exception as e:
+            # 检查是否是会话失效错误
+            if any(error_msg in str(e) for error_msg in ["invalid session id", "no such session", "browser has closed"]):
+                logger.error(f"浏览器会话已失效: {str(e)}")
+                return False
+            # 其他错误可能是临时的，仍然认为浏览器有效
+            logger.warning(f"浏览器检查出现错误，但可能仍然有效: {str(e)}")
+            return True
+    
+    def restart_browser(self):
+        """
+        重启浏览器
+        
+        返回:
+            重启成功返回True，否则返回False
+        """
+        logger.info("尝试重启浏览器...")
+        
+        try:
+            # 先尝试关闭现有浏览器
+            self.stop()
+            
+            # 等待一段时间确保浏览器完全关闭
+            time.sleep(5)
+            
+            # 重新启动浏览器
+            result = self.start()
+            
+            if result:
+                logger.info("浏览器重启成功")
+                return True
+            else:
+                logger.error("浏览器重启失败")
+                return False
+                
+        except Exception as e:
+            logger.error(f"重启浏览器时出错: {str(e)}")
+            return False
+    
+    def check_and_restart_browser(self):
+        """
+        检查浏览器状态，如果异常则尝试重启
+        
+        返回:
+            浏览器状态正常或重启成功返回True，否则返回False
+        """
+        logger.info("检查浏览器状态...")
+        
+        # 检查浏览器是否已关闭
+        if self.is_browser_closed():
+            logger.warning("浏览器已关闭，尝试重启")
+            return self.restart_browser()
+        
+        # 检查浏览器会话是否有效
+        if not self.is_browser_alive():
+            logger.warning("浏览器会话已失效，尝试重启")
+            return self.restart_browser()
+        
+        # 检查浏览器连接状态
+        try:
+            current_url = self.driver.current_url
+            logger.info(f"浏览器连接正常，当前URL: {current_url}")
+        except Exception as e:
+            logger.warning(f"浏览器连接异常: {str(e)}")
+            return self.restart_browser()
+        
+        # 检查登录状态
+        if not self.check_login_status():
+            logger.warning("登录状态异常，尝试重新登录")
+            
+            # 尝试重新登录
+            try:
+                self.driver.get("https://www.douyin.com/")
+                time.sleep(3)
+                
+                if self.check_login_status():
+                    logger.info("重新登录成功")
+                else:
+                    logger.warning("重新登录失败，尝试重启浏览器")
+                    return self.restart_browser()
+            except Exception as e:
+                logger.warning(f"尝试重新登录时出错: {str(e)}")
+                return self.restart_browser()
+        
+        logger.info("浏览器状态正常，登录有效")
+        return True
+    
+    def check_login_status(self):
+        """
+        检查当前登录状态
+        
+        返回:
+            登录有效返回True，无效返回False
+        """
+        try:
+            if self.driver is None:
+                logger.warning("浏览器未初始化，无法检查登录状态")
+                return False
+            
+            # 访问抖音首页
+            try:
+                current_url = self.driver.current_url
+                if "douyin.com" not in current_url:
+                    logger.info("当前不是抖音页面，导航到抖音首页")
+                    self.driver.get("https://www.douyin.com")
+                    logger.info("通过URL访问抖音首页: https://www.douyin.com")
+                    time.sleep(3)  # 等待页面加载
+            except Exception as e:
+                logger.warning(f"访问抖音首页失败: {str(e)}")
+                return False
+            
+            # 检查是否被重定向到登录页
+            current_url = self.driver.current_url
+            if "login" in current_url:
+                logger.warning(f"通过URL检测到页面被重定向到登录页: {current_url}，登录状态无效")
+                return False
+            
+            # 检查登录状态指示元素
+            try:
+                for selector in COMMON['LOGIN_CHECK']:
+                    try:
+                        element = self.driver.find_element(By.XPATH, selector)
+                        logger.info(f"通过元素选择器检测到登录状态指示元素: {selector}")
+                        return True
+                    except NoSuchElementException:
+                        continue
+            except Exception as e:
+                logger.warning(f"检查登录状态指示元素时出错: {str(e)}")
+            
+            # 尝试访问个人主页，进一步验证登录状态
+            try:
+                # 直接访问个人主页
+                logger.info("尝试直接访问个人主页")
+                self.driver.get("https://www.douyin.com/user/self")
+                logger.info("通过URL访问个人主页: https://www.douyin.com/user/self")
+                time.sleep(3)  # 等待页面加载
+                
+                # 检查当前URL是否包含user
+                current_url = self.driver.current_url
+                if "user" in current_url and "login" not in current_url:
+                    logger.info(f"通过URL检测到成功访问个人主页: {current_url}")
+                    
+                    # 使用更多选择器检查个人信息元素
+                    profile_selectors = COMMON['PROFILE_INFO'] + [
+                        "//div[contains(@class, 'author')]",
+                        "//div[contains(@class, 'profile')]",
+                        "//div[contains(@class, 'nickname')]",
+                        "//div[contains(@class, 'avatar')]",
+                        "//div[contains(@class, 'follow-info')]",
+                        "//span[contains(text(), '粉丝') or contains(text(), '关注')]",
+                        "//div[contains(@data-e2e, 'user-info')]"
+                    ]
+                    
+                    for selector in profile_selectors:
+                        try:
+                            element = self.driver.find_element(By.XPATH, selector)
+                            logger.info(f"通过元素选择器检测到个人主页信息元素: {selector}")
+                            return True
+                        except NoSuchElementException:
+                            continue
+                    
+                    # 使用JavaScript检测页面内容
+                    try:
+                        # 检查页面是否包含个人信息相关文本
+                        js_result = self.driver.execute_script("""
+                            var pageText = document.body.innerText;
+                            if (pageText.includes('粉丝') || pageText.includes('关注') || 
+                                pageText.includes('获赞') || pageText.includes('作品')) {
+                                return true;
+                            }
+                            
+                            // 检查是否有个人信息相关元素
+                            var profileElements = document.querySelectorAll('div[class*="profile"], div[class*="author"], div[class*="user"]');
+                            return profileElements.length > 0;
+                        """)
+                        
+                        if js_result:
+                            logger.info("通过JavaScript检测到个人主页信息元素")
+                            return True
+                    except Exception as e:
+                        logger.warning(f"使用JavaScript检测个人主页信息时出错: {str(e)}")
+                    
+                    # 如果URL正确但未找到个人信息元素，可能是页面结构变化，但仍然认为登录有效
+                    logger.info("URL显示在个人主页，但未找到预期的个人信息元素，仍然认为登录有效")
+                    return True
+                else:
+                    logger.warning(f"通过URL检测到未能成功访问个人主页，当前URL: {current_url}")
+            except Exception as e:
+                logger.warning(f"访问个人主页验证登录状态时出错: {str(e)}")
+            
+            # 尝试使用JavaScript检测登录状态
+            try:
+                js_result = self.driver.execute_script("""
+                    // 检查是否有登录相关的cookie
+                    var hasCookie = document.cookie.includes('sessionid') || document.cookie.includes('passport_csrf_token');
+                    
+                    // 检查页面上是否有登录用户相关的元素
+                    var hasLoginElements = false;
+                    var elements = document.querySelectorAll('div, span, a');
+                    for (var i = 0; i < elements.length; i++) {
+                        var el = elements[i];
+                        if ((el.className && (el.className.includes('avatar') || el.className.includes('user') || 
+                             el.className.includes('login') || el.className.includes('profile'))) ||
+                            (el.innerText && (el.innerText.includes('我的') || el.innerText.includes('个人中心')))) {
+                            hasLoginElements = true;
+                            break;
+                        }
+                    }
+                    
+                    return hasCookie || hasLoginElements;
+                """)
+                
+                if js_result:
+                    logger.info("通过JavaScript检测到登录状态有效")
+                    return True
+            except Exception as e:
+                logger.warning(f"使用JavaScript检测登录状态时出错: {str(e)}")
+            
+            # 如果所有检查都未能确认登录状态，则认为登录无效
+            logger.warning("无法确认登录状态，可能已失效")
+            return False
+            
+        except Exception as e:
+            logger.error(f"检查登录状态时出错: {str(e)}")
+            return False 

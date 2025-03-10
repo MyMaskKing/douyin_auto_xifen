@@ -120,4 +120,26 @@ def save_html(driver, operation, user_id=None):
         return html_path
     except Exception as e:
         logger.error(f"保存HTML源码失败: {str(e)}")
+        return None
+
+def save_html_content(html_content, operation, user_id=None):
+    """
+    保存HTML内容到文件
+    
+    参数:
+        html_content: HTML内容字符串
+        operation: 操作类型
+        user_id: 用户ID (可选)
+    
+    返回:
+        HTML文件路径或None
+    """
+    try:
+        html_path = get_log_path("html", operation=operation, user_id=user_id)
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
+        logger.info(f"已保存{operation}HTML内容: {html_path}")
+        return html_path
+    except Exception as e:
+        logger.error(f"保存HTML内容失败: {str(e)}")
         return None 
