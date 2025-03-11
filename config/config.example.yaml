@@ -38,6 +38,9 @@ operation:
   max_follow_per_video: 20  # 每个视频最多关注的评论者数量
   max_comment_per_day: 10  # 每日最大评论数量
   follow_fans_batch_size: 10  # 每批次处理的待关注粉丝数量
+  batch_rest_interval: [30, 60]  # 批量处理后的休息时间范围（秒）
+  user_interval: [3, 10]  # 单个用户处理后的等待时间范围（秒）
+  batch_size_before_rest: 20  # 处理多少个用户后休息
   
 # 工作时间配置
 working_hours:

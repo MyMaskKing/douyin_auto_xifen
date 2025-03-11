@@ -316,6 +316,12 @@ class FollowFansManager:
             max_follow_per_day = self.config.get('operation', {}).get('daily_follow_limit', 150)
             message = self.config.get('interaction', {}).get('follow_message', "为了成为有效粉丝，需要进行三天聊天。")
             
+            # 获取等待时间配置
+            operation_config = self.config.get('operation', {})
+            batch_rest_interval = operation_config.get('batch_rest_interval', [30, 60])  # 批量处理后的休息时间，默认30-60秒
+            user_interval = operation_config.get('user_interval', [3, 10])  # 单个用户处理后的等待时间，默认3-10秒
+            batch_size_before_rest = operation_config.get('batch_size_before_rest', 20)  # 多少个用户后休息，默认20个
+            
             # 检查今日关注数量是否已达上限
             today_follows = self.db.get_today_follow_count()
             
@@ -338,6 +344,8 @@ class FollowFansManager:
             
             # 处理待关注粉丝
             success_count = 0
+            batch_count = 0  # 记录当前批次处理的数量
+            
             for fan in unprocessed_fans:
                 fan_id = fan[0]  # 数据库记录ID
                 user_id = fan[1]  # 用户ID
@@ -374,20 +382,29 @@ class FollowFansManager:
                     self.db.delete_follow_fan(fan_id)
                     
                     success_count += 1
+                    batch_count += 1
                 else:
                     logger.warning(f"关注视频评论者失败: {username} ({user_id})")
                     # 标记为已处理
                     self.db.mark_follow_fan_as_processed(fan_id)
                 
-                # 随机等待一段时间，避免操作过于频繁
-                follow_interval = self.config.get('operation', {}).get('follow_interval', [30, 60])
-                if isinstance(follow_interval, list) and len(follow_interval) == 2:
-                    wait_time = random.uniform(follow_interval[0], follow_interval[1])
+                # 每处理指定数量用户后休息一段时间
+                if batch_count >= batch_size_before_rest:
+                    if isinstance(batch_rest_interval, list) and len(batch_rest_interval) == 2:
+                        rest_time = random.uniform(batch_rest_interval[0], batch_rest_interval[1])
+                    else:
+                        rest_time = batch_rest_interval
+                    logger.info(f"已处理{batch_size_before_rest}个用户，休息 {rest_time:.1f} 秒")
+                    time.sleep(rest_time)
+                    batch_count = 0  # 重置批次计数
                 else:
-                    wait_time = follow_interval
-                
-                logger.info(f"等待 {wait_time:.1f} 秒后处理下一个用户")
-                time.sleep(wait_time)
+                    # 每个用户之间短暂等待
+                    if isinstance(user_interval, list) and len(user_interval) == 2:
+                        wait_time = random.uniform(user_interval[0], user_interval[1])
+                    else:
+                        wait_time = user_interval
+                    logger.info(f"等待 {wait_time:.1f} 秒后处理下一个用户")
+                    time.sleep(wait_time)
             
             logger.info(f"关注视频评论者任务完成，成功关注 {success_count} 个用户")
             return True
