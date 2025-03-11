@@ -8,12 +8,22 @@ target:
   users:  # 目标用户列表（想要涨粉的同类型账号）
     - "user1"  # 第一个目标用户
     - "user2"  # 第二个目标用户
+
+# 目标视频配置
+target_videos:  # 目标视频列表（想要评论和获取用户的视频）
+  - "7123456789"  # 视频ID，从视频URL中获取
+  - "7234567890"  # 视频ID，从视频URL中获取
   
 # 功能开关配置
 features:
   follow_fans: true      # 是否启用关注粉丝功能
   check_follows: true    # 是否启用审查关注列表功能
   unfollow_users: true   # 是否启用取关功能
+  check_fans: true       # 是否启用检查粉丝列表功能
+  follow_back: true      # 是否启用回关功能
+  follow_video_fans: true # 是否启用关注视频评论者功能
+  comment_video: true    # 是否启用视频评论功能
+  extract_commenters: true # 是否启用提取评论用户功能
 
 # 操作配置
 operation:
@@ -25,6 +35,9 @@ operation:
   unfollow_batch_size: 10  # 每批次处理的取关用户数量
   unfollow_success_rate_threshold: 0.7  # 取关成功率阈值，低于此值则暂停取关任务
   max_fans_per_target: 50  # 每个目标用户最多处理的粉丝数
+  max_follow_per_video: 20  # 每个视频最多关注的评论者数量
+  max_comment_per_day: 10  # 每日最大评论数量
+  follow_fans_batch_size: 10  # 每批次处理的待关注粉丝数量
   
 # 工作时间配置
 working_hours:
@@ -44,6 +57,11 @@ interaction:
     - "支持一下"
     - "学习了"
     - "很棒"
+  video_comments:  # 视频评论内容列表
+    - "新人涨粉，互关必回"
+    - "新人求关注，互关必回"
+    - "新人报道，互关必回"
+  follow_message: "为了成为有效粉丝，需要进行三天聊天。"  # 关注后发送的私信内容
   like_probability: 0.8  # 点赞概率
   comment_probability: 0.3  # 评论概率
 

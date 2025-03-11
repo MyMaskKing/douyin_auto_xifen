@@ -164,8 +164,12 @@ class BrowserManager:
     def stop(self):
         """停止程序并清理资源"""
         if self.driver:
-            self.driver.quit()
+            # self.driver.quit()
             logger.info("浏览器已关闭")
+            
+    def quit(self):
+        """停止程序并清理资源（stop方法的别名）"""
+        self.stop()
 
     def is_browser_closed(self):
         """

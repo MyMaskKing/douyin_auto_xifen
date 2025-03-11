@@ -15,11 +15,12 @@ from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.keys import Keys
 from .follow_manager import FollowListManager
 from .follow_fans_manager import FollowFansManager
+from .video_comment_manager import VideoCommentManager
 
 class TaskRunner:
     """任务运行类，负责任务调度和执行"""
     
-    def __init__(self, browser_manager, user_profile_manager, fan_manager, follow_manager, db, config):
+    def __init__(self, browser_manager, user_profile_manager, fan_manager, follow_manager, db, config, follow_fans_manager=None, video_comment_manager=None):
         """
         初始化任务运行器
         
@@ -30,6 +31,8 @@ class TaskRunner:
             follow_manager: 关注管理器对象
             db: 数据库对象
             config: 配置对象
+            follow_fans_manager: 粉丝关注管理器对象，如果为None则创建新的
+            video_comment_manager: 视频评论管理器对象，如果为None则创建新的
         """
         self.browser_manager = browser_manager
         self.user_profile_manager = user_profile_manager
@@ -44,7 +47,9 @@ class TaskRunner:
         # 初始化关注列表管理器
         self.follow_list_manager = FollowListManager(browser_manager, db, config)
         # 初始化粉丝关注管理器
-        self.follow_fans_manager = FollowFansManager(browser_manager, db, config)
+        self.follow_fans_manager = follow_fans_manager or FollowFansManager(browser_manager, db, config)
+        # 初始化视频评论管理器
+        self.video_comment_manager = video_comment_manager or VideoCommentManager(browser_manager, db, config)
         
     def handle_task_failure(self, error_message, error, screenshot_name=None):
         """
@@ -79,7 +84,7 @@ class TaskRunner:
                 logger.error("浏览器状态异常，无法执行任务")
                 return {'success': False, 'reason': '浏览器状态异常'}
             
-            # 获取功能开关配置
+            # 获取功能开关状态
             features = self.config.get('features', {})
             unfollow_enabled = features.get('unfollow_users', False)
             check_follows_enabled = features.get('check_follows', False)
@@ -87,111 +92,76 @@ class TaskRunner:
             check_fans_enabled = features.get('check_fans', False)
             follow_back_enabled = features.get('follow_back', False)
             follow_video_fans_enabled = features.get('follow_video_fans', False)
-            follow_group_fans_enabled = features.get('follow_group_fans', False)
+            extract_commenters_enabled = features.get('extract_commenters', False)
             
-            logger.info(f"功能开关状态: 取关={unfollow_enabled}, 检查关注列表={check_follows_enabled}, "
-                       f"关注粉丝={follow_fans_enabled}, 检查粉丝列表={check_fans_enabled}, "
-                       f"回关={follow_back_enabled}, 关注视频评论者={follow_video_fans_enabled}, "
-                       f"关注群组成员={follow_group_fans_enabled}")
+            logger.info(
+                f"功能开关状态: 取关={unfollow_enabled}, "
+                f"检查关注列表={check_follows_enabled}, "
+                f"关注粉丝={follow_fans_enabled}, "
+                f"检查粉丝列表={check_fans_enabled}, "
+                f"回关={follow_back_enabled}, "
+                f"关注视频评论者={follow_video_fans_enabled}, "
+                f"提取评论用户={extract_commenters_enabled}"
+            )
             
-            # 执行取关任务
-            if unfollow_enabled:
+            # 执行视频评论和提取用户任务
+            if follow_video_fans_enabled:
+                result = self.video_comment_manager.run_video_comment_task()
+                if not result['success']:
+                    logger.error("视频评论任务执行失败")
+                    return {'success': False, 'reason': '视频访问或评论失败'}
+                logger.info("视频评论任务执行成功")
+            
+            # 提取评论用户任务
+            if extract_commenters_enabled:
                 try:
-                    if self.run_unfollow_task():
-                        logger.info("取关任务执行成功")
+                    # 获取目标视频列表
+                    target_videos = self.config.get('target_videos', [])
+                    
+                    if not target_videos:
+                        logger.warning("未配置目标视频，跳过提取评论用户任务")
                     else:
-                        logger.warning("取关任务执行失败，检查浏览器状态")
-                        if not self.browser_manager.check_and_restart_browser():
-                            logger.error("浏览器状态异常，无法继续执行任务")
-                            return {'success': False, 'reason': '浏览器状态异常'}
+                        # 按顺序处理视频列表
+                        for video_url in target_videos:
+                            if not self.db.is_video_processed(video_url):
+                                logger.info(f"开始从视频提取评论用户: {video_url}")
+                                if self.video_comment_manager.extract_commenters_from_video(video_url):
+                                    self.db.mark_video_processed(video_url)
+                                    logger.info(f"成功从视频提取评论用户: {video_url}")
+                                else:
+                                    logger.error(f"从视频提取评论用户失败: {video_url}")
                 except Exception as e:
-                    logger.error(f"执行取关任务时出错: {str(e)}")
-                    self.handle_task_failure("执行取关任务时出错", e)
+                    logger.error(f"执行提取评论用户任务时出错: {str(e)}")
+                    return {'success': False, 'reason': str(e)}
             else:
-                logger.info("取关功能已禁用，跳过取关任务")
+                logger.info("提取评论用户功能已禁用，跳过任务")
             
-            # 执行检查关注列表任务
-            if check_follows_enabled:
+            # 执行关注视频评论者任务
+            if follow_video_fans_enabled:
                 try:
-                    if self.follow_list_manager.run_check_follows_task():
-                        # 获取配置的任务间隔时间
-                        task_interval = self.config.get('task', {}).get('check_follows_interval', 3600)  # 默认1小时
-                        logger.info(f"检查关注列表任务完成，休息 {task_interval} 秒后执行下一轮任务")
-                        return {
-                            'success': True,
-                            'task_type': 'check_follows',
-                            'interval': task_interval
-                        }
-                    else:
-                        logger.warning("检查关注列表任务执行失败，检查浏览器状态")
-                        if not self.browser_manager.check_and_restart_browser():
-                            logger.error("浏览器状态异常，无法继续执行任务")
-                            return {'success': False, 'reason': '浏览器状态异常'}
-                except Exception as e:
-                    logger.error(f"执行检查关注列表任务时出错: {str(e)}")
-                    self.handle_task_failure("执行检查关注列表任务时出错", e)
-            else:
-                logger.info("检查关注列表功能已禁用，跳过检查关注列表任务")
-            
-            # 执行检查粉丝列表任务
-            if check_fans_enabled:
-                try:
-                    if self.fan_manager.run_check_fans_task():
-                        logger.info("检查粉丝列表任务执行成功")
-                    else:
-                        logger.warning("检查粉丝列表任务执行失败，检查浏览器状态")
-                        if not self.browser_manager.check_and_restart_browser():
-                            logger.error("浏览器状态异常，无法继续执行任务")
-                            return {'success': False, 'reason': '浏览器状态异常'}
-                except Exception as e:
-                    logger.error(f"执行检查粉丝列表任务时出错: {str(e)}")
-                    self.handle_task_failure("执行检查粉丝列表任务时出错", e)
-            else:
-                logger.info("检查粉丝列表功能已禁用，跳过检查粉丝列表任务")
-            
-            # 执行回关任务
-            if follow_back_enabled:
-                try:
-                    if self.fan_manager.run_follow_back_task():
-                        logger.info("回关任务执行成功")
-                    else:
-                        logger.warning("回关任务执行失败，检查浏览器状态")
-                        if not self.browser_manager.check_and_restart_browser():
-                            logger.error("浏览器状态异常，无法继续执行任务")
-                            return {'success': False, 'reason': '浏览器状态异常'}
-                except Exception as e:
-                    logger.error(f"执行回关任务时出错: {str(e)}")
-                    self.handle_task_failure("执行回关任务时出错", e)
-            else:
-                logger.info("回关功能已禁用，跳过回关任务")
-            
-            # 执行关注粉丝任务（视频评论者和群组成员）
-            if follow_video_fans_enabled or follow_group_fans_enabled:
-                try:
-                    # 更新配置中的视频和群组关注开关
+                    # 更新配置中的视频关注开关
                     self.follow_fans_manager.config['features'] = {
-                        'follow_video_fans': follow_video_fans_enabled,
-                        'follow_group_fans': follow_group_fans_enabled
+                        'follow_video_fans': follow_video_fans_enabled
                     }
                     
-                    if self.follow_fans_manager.run_follow_fans_task():
-                        logger.info("关注粉丝任务执行成功")
+                    task_result = self.follow_fans_manager.run_follow_fans_task()
+                    if task_result:
+                        logger.info("关注视频评论者任务执行成功")
                     else:
-                        logger.warning("关注粉丝任务执行失败，检查浏览器状态")
-                        if not self.browser_manager.check_and_restart_browser():
-                            logger.error("浏览器状态异常，无法继续执行任务")
-                            return {'success': False, 'reason': '浏览器状态异常'}
+                        logger.error("关注视频评论者任务执行失败")
+                        return {'success': False, 'reason': '关注视频评论者任务失败'}
                 except Exception as e:
-                    logger.error(f"执行关注粉丝任务时出错: {str(e)}")
-                    self.handle_task_failure("执行关注粉丝任务时出错", e)
+                    logger.error(f"执行关注视频评论者任务时出错: {str(e)}")
+                    self.handle_task_failure("执行关注视频评论者任务时出错", e)
+                    return {'success': False, 'reason': str(e)}
             else:
-                logger.info("关注视频评论者和群组成员功能已禁用，跳过关注粉丝任务")
+                logger.info("关注视频评论者功能已禁用，跳过任务")
             
             return {'success': True}
+            
         except Exception as e:
             logger.error(f"执行任务时出错: {str(e)}")
-            self.handle_task_failure("执行任务时出错", e)
-            return {'success': False, 'reason': str(e)}
+            return {'success': False, 'error': str(e)}
         
     def run_unfollow_task(self):
         """
@@ -323,4 +293,88 @@ class TaskRunner:
         except Exception as e:
             logger.error(f"执行取关任务失败: {str(e)}")
             self.handle_task_failure("执行取关任务失败", e, "unfollow_task_error")
+            return False
+
+    def run_check_follows_task(self):
+        """
+        执行检查关注列表任务
+        """
+        try:
+            logger.info("开始执行检查关注列表任务...")
+            
+            # 检查浏览器状态
+            if not self.browser_manager.check_and_restart_browser():
+                logger.error("浏览器状态异常，无法执行检查关注列表任务")
+                return False
+            
+            # 获取配置的任务间隔时间
+            task_interval = self.config.get('task', {}).get('check_follows_interval', 3600)  # 默认1小时
+            
+            if self.follow_list_manager.run_check_follows_task():
+                logger.info(f"检查关注列表任务完成，休息 {task_interval} 秒后执行下一轮任务")
+                return True
+            else:
+                logger.warning("检查关注列表任务执行失败，检查浏览器状态")
+                if not self.browser_manager.check_and_restart_browser():
+                    logger.error("浏览器状态异常，无法继续执行任务")
+                    return False
+            
+            return False
+        except Exception as e:
+            logger.error(f"执行检查关注列表任务时出错: {str(e)}")
+            self.handle_task_failure("执行检查关注列表任务时出错", e)
+            return False
+
+    def run_check_fans_task(self):
+        """
+        执行检查粉丝列表任务
+        """
+        try:
+            logger.info("开始执行检查粉丝列表任务...")
+            
+            # 检查浏览器状态
+            if not self.browser_manager.check_and_restart_browser():
+                logger.error("浏览器状态异常，无法执行检查粉丝列表任务")
+                return False
+            
+            if self.fan_manager.run_check_fans_task():
+                logger.info("检查粉丝列表任务执行成功")
+                return True
+            else:
+                logger.warning("检查粉丝列表任务执行失败，检查浏览器状态")
+                if not self.browser_manager.check_and_restart_browser():
+                    logger.error("浏览器状态异常，无法继续执行任务")
+                    return False
+            
+            return False
+        except Exception as e:
+            logger.error(f"执行检查粉丝列表任务时出错: {str(e)}")
+            self.handle_task_failure("执行检查粉丝列表任务时出错", e)
+            return False
+
+    def run_follow_back_task(self):
+        """
+        执行回关任务
+        """
+        try:
+            logger.info("开始执行回关任务...")
+            
+            # 检查浏览器状态
+            if not self.browser_manager.check_and_restart_browser():
+                logger.error("浏览器状态异常，无法执行回关任务")
+                return False
+            
+            if self.fan_manager.run_follow_back_task():
+                logger.info("回关任务执行成功")
+                return True
+            else:
+                logger.warning("回关任务执行失败，检查浏览器状态")
+                if not self.browser_manager.check_and_restart_browser():
+                    logger.error("浏览器状态异常，无法继续执行任务")
+                    return False
+            
+            return False
+        except Exception as e:
+            logger.error(f"执行回关任务时出错: {str(e)}")
+            self.handle_task_failure("执行回关任务时出错", e)
             return False

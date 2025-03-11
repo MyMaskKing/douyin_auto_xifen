@@ -102,4 +102,25 @@ COMMON = {
         '//div[contains(@class, "count-item")]',   # 计数项（粉丝数、关注数等）
         '//div[contains(@class, "tab-bar")]'       # 标签栏
     ],
+}
+
+# 视频评论用户元素
+VIDEO_COMMENT_USER = {
+    # 评论项
+    'COMMENT_ITEM': [
+        "//div[contains(@class, 'ECMy_Zdt')]",
+        "//div[contains(@class, 'comment-item')]"
+    ],
+    
+    # 评论用户名和链接
+    'USER_LINK': [
+        ".//a[contains(@class, 'B3AsdZT9')]",
+        ".//a[contains(@href, '/user/')]"
+    ],
+    
+    # 评论用户名
+    'USERNAME': [
+        ".//span[contains(@class, 'Nu66P_ba')]",
+        ".//span[contains(@class, 'account-name')]"
+    ]
 } 

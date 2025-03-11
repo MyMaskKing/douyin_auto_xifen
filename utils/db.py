@@ -28,6 +28,20 @@ class Database:
                 )
             ''')
             
+            # 待关注粉丝表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS follow_fans (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT,
+                    username TEXT,
+                    from_type TEXT,  -- 粉丝来源类型：video_comment, video_like, etc.
+                    source_id TEXT,  -- 来源ID，如视频ID
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    processed INTEGER DEFAULT 0,  -- 0: 未处理, 1: 已处理
+                    UNIQUE(user_id)
+                )
+            ''')
+            
             # 粉丝记录表
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS fans (
@@ -69,12 +83,12 @@ class Database:
                 )
             ''')
             
-            # 目标用户处理记录表
+            # 视频处理记录表
             cursor.execute('''
-                CREATE TABLE IF NOT EXISTS target_users (
-                    user_id TEXT PRIMARY KEY,
-                    processed_time TIMESTAMP,
-                    processed_count INTEGER DEFAULT 0
+                CREATE TABLE IF NOT EXISTS processed_videos (
+                    video_url TEXT PRIMARY KEY,
+                    processed_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    success INTEGER DEFAULT 1
                 )
             ''')
             
@@ -276,140 +290,6 @@ class Database:
         """关闭数据库连接"""
         if self.conn:
             self.conn.close()
-            
-    def is_target_user_processed(self, user_id):
-        """检查目标用户是否已处理过"""
-        try:
-            cursor = self.conn.cursor()
-            today = datetime.now().date()
-            cursor.execute(
-                "SELECT COUNT(*) FROM target_users WHERE user_id = ? AND date(processed_time) = date(?)",
-                (user_id, today)
-            )
-            return cursor.fetchone()[0] > 0
-            
-        except Exception as e:
-            logger.error(f"检查目标用户处理状态失败: {str(e)}")
-            return False
-            
-    def mark_target_user_processed(self, user_id, processed_count=0):
-        """
-        标记目标用户为已处理
-        
-        参数:
-            user_id: 用户ID
-            processed_count: 本次处理的粉丝数量
-        """
-        try:
-            cursor = self.conn.cursor()
-            
-            # 先查询是否已存在记录及当前处理次数
-            cursor.execute(
-                "SELECT processed_count FROM target_users WHERE user_id = ?",
-                (user_id,)
-            )
-            result = cursor.fetchone()
-            
-            if result:
-                # 如果存在记录，累加处理次数
-                current_count = result[0]
-                new_count = current_count + processed_count
-                cursor.execute(
-                    "UPDATE target_users SET processed_time = ?, processed_count = ? WHERE user_id = ?",
-                    (datetime.now(), new_count, user_id)
-                )
-                logger.info(f"更新目标用户 {user_id} 处理状态，累计处理次数: {new_count}")
-            else:
-                # 如果不存在记录，创建新记录
-                cursor.execute(
-                    "INSERT INTO target_users (user_id, processed_time, processed_count) VALUES (?, ?, ?)",
-                    (user_id, datetime.now(), processed_count)
-                )
-                logger.info(f"新增目标用户 {user_id} 处理记录，处理次数: {processed_count}")
-                
-            self.conn.commit()
-            
-        except Exception as e:
-            logger.error(f"标记目标用户处理状态失败: {str(e)}")
-            
-    def get_target_user_stats(self, days=7):
-        """
-        获取目标用户处理统计信息
-        
-        参数:
-            days: 查询最近几天的数据，默认7天
-            
-        返回:
-            包含统计信息的字典列表
-        """
-        try:
-            cursor = self.conn.cursor()
-            start_date = (datetime.now() - timedelta(days=days)).date()
-            
-            cursor.execute("""
-                SELECT 
-                    user_id, 
-                    MAX(processed_time) as last_processed, 
-                    SUM(processed_count) as total_processed,
-                    COUNT(*) as process_times
-                FROM target_users 
-                WHERE date(processed_time) >= date(?)
-                GROUP BY user_id
-                ORDER BY last_processed DESC
-            """, (start_date,))
-            
-            results = []
-            for row in cursor.fetchall():
-                results.append({
-                    'user_id': row[0],
-                    'last_processed': row[1],
-                    'total_processed': row[2],
-                    'process_times': row[3]
-                })
-                
-            return results
-            
-        except Exception as e:
-            logger.error(f"获取目标用户统计信息失败: {str(e)}")
-            return []
-            
-    def get_unprocessed_target_users(self, target_users, days=1):
-        """
-        获取未处理的目标用户列表
-        
-        参数:
-            target_users: 目标用户ID列表
-            days: 查询最近几天未处理的用户，默认1天
-            
-        返回:
-            未处理的目标用户ID列表
-        """
-        try:
-            if not target_users:
-                return []
-                
-            cursor = self.conn.cursor()
-            start_date = (datetime.now() - timedelta(days=days)).date()
-            
-            # 构建SQL参数占位符
-            placeholders = ','.join(['?'] * len(target_users))
-            
-            # 查询在指定时间范围内已处理的用户
-            cursor.execute(f"""
-                SELECT DISTINCT user_id
-                FROM target_users 
-                WHERE user_id IN ({placeholders})
-                AND date(processed_time) >= date(?)
-            """, target_users + [start_date])
-            
-            processed_users = [row[0] for row in cursor.fetchall()]
-            
-            # 返回未处理的用户
-            return [user for user in target_users if user not in processed_users]
-            
-        except Exception as e:
-            logger.error(f"获取未处理目标用户失败: {str(e)}")
-            return []
             
     def mark_user_for_unfollow(self, user_id, username, days=3):
         """
@@ -639,10 +519,277 @@ class Database:
                 "SELECT is_processed FROM fans WHERE user_id = ?",
                 (user_id,)
             )
-            
             result = cursor.fetchone()
             return result and result[0] == 1
             
         except Exception as e:
             logger.error(f"检查粉丝处理状态失败: {str(e)}")
-            return False 
+            return False
+            
+    def get_unprocessed_target_videos(self, target_videos, days=1):
+        """
+        获取今天未处理的目标视频
+        
+        参数:
+            target_videos: 目标视频列表
+            days: 检查最近几天的数据，默认为1天
+            
+        返回:
+            未处理的视频ID列表
+        """
+        try:
+            if not target_videos:
+                return []
+                
+            cursor = self.conn.cursor()
+            start_date = (datetime.now() - timedelta(days=days)).date()
+            
+            # 检查是否存在target_videos表
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='target_videos'")
+            if not cursor.fetchone():
+                # 创建target_videos表
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS target_videos (
+                        video_id TEXT PRIMARY KEY,
+                        processed_time TIMESTAMP,
+                        follow_count INTEGER DEFAULT 0,
+                        comment_count INTEGER DEFAULT 0
+                    )
+                ''')
+                self.conn.commit()
+                logger.info("创建target_videos表")
+                return target_videos  # 如果表不存在，返回所有视频
+            
+            # 构建SQL参数占位符
+            placeholders = ','.join(['?'] * len(target_videos))
+            
+            # 查询在指定时间范围内已处理的视频
+            cursor.execute(f"""
+                SELECT DISTINCT video_id
+                FROM target_videos 
+                WHERE video_id IN ({placeholders})
+                AND date(processed_time) >= date(?)
+            """, target_videos + [start_date])
+            
+            processed_videos = [row[0] for row in cursor.fetchall()]
+            
+            # 返回未处理的视频
+            return [video for video in target_videos if video not in processed_videos]
+            
+        except Exception as e:
+            logger.error(f"获取未处理目标视频失败: {str(e)}")
+            return []
+            
+    def mark_target_video_processed(self, video_id, follow_count=0, comment_count=0):
+        """
+        标记视频为已处理
+        
+        参数:
+            video_id: 视频ID
+            follow_count: 关注的用户数量
+            comment_count: 评论的数量
+            
+        返回:
+            bool: 是否成功标记
+        """
+        try:
+            now = datetime.now()
+            cursor = self.conn.cursor()
+            
+            # 检查是否存在target_videos表
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='target_videos'")
+            if not cursor.fetchone():
+                # 创建target_videos表
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS target_videos (
+                        video_id TEXT PRIMARY KEY,
+                        processed_time TIMESTAMP,
+                        follow_count INTEGER DEFAULT 0,
+                        comment_count INTEGER DEFAULT 0
+                    )
+                ''')
+                self.conn.commit()
+                logger.info("创建target_videos表")
+            
+            # 插入或更新记录
+            cursor.execute(
+                "INSERT OR REPLACE INTO target_videos (video_id, processed_time, follow_count, comment_count) VALUES (?, ?, ?, ?)",
+                (video_id, now, follow_count, comment_count)
+            )
+            self.conn.commit()
+            logger.info(f"已标记视频 {video_id} 为已处理，关注了 {follow_count} 个用户，评论了 {comment_count} 次")
+            return True
+            
+        except Exception as e:
+            logger.error(f"标记视频为已处理失败: {str(e)}")
+            return False
+            
+    def add_comment_record(self, video_id, comment_text):
+        """
+        添加评论记录
+        
+        参数:
+            video_id: 视频ID
+            comment_text: 评论内容
+            
+        返回:
+            bool: 是否成功添加
+        """
+        try:
+            now = datetime.now()
+            cursor = self.conn.cursor()
+            
+            # 检查是否存在comments表
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='comments'")
+            if not cursor.fetchone():
+                # 创建comments表
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS comments (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        video_id TEXT,
+                        comment_text TEXT,
+                        comment_time TIMESTAMP
+                    )
+                ''')
+                self.conn.commit()
+                logger.info("创建comments表")
+            
+            # 插入评论记录
+            cursor.execute(
+                "INSERT INTO comments (video_id, comment_text, comment_time) VALUES (?, ?, ?)",
+                (video_id, comment_text, now)
+            )
+            self.conn.commit()
+            logger.info(f"已添加视频 {video_id} 的评论记录: {comment_text}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"添加评论记录失败: {str(e)}")
+            return False
+            
+    def clear_video_comments(self, days=None):
+        """
+        清空评论记录
+        
+        参数:
+            days: 清除几天前的评论，如果为None则清除所有评论
+            
+        返回:
+            bool: 是否成功清空
+        """
+        try:
+            cursor = self.conn.cursor()
+            
+            # 检查是否存在comments表
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='comments'")
+            if not cursor.fetchone():
+                logger.info("comments表不存在，无需清空")
+                return True
+            
+            if days is None:
+                # 清空所有评论
+                cursor.execute("DELETE FROM comments")
+                logger.info("已清空所有评论记录")
+            else:
+                # 清除指定天数前的评论
+                cutoff_date = datetime.now() - timedelta(days=days)
+                cursor.execute("DELETE FROM comments WHERE comment_time < ?", (cutoff_date,))
+                logger.info(f"已清除 {days} 天前的评论记录")
+            
+            self.conn.commit()
+            return True
+            
+        except Exception as e:
+            logger.error(f"清空评论记录失败: {str(e)}")
+            return False
+            
+    def get_user_by_id(self, user_id):
+        """根据用户ID获取用户信息"""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM follows WHERE user_id = ?", (user_id,))
+        return cursor.fetchone()
+        
+    # ===== follow_fans表操作方法 =====
+    
+    def add_follow_fan(self, user_id, username, from_type, source_id=None):
+        """添加待关注粉丝"""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "INSERT OR IGNORE INTO follow_fans (user_id, username, from_type, source_id) VALUES (?, ?, ?, ?)",
+                (user_id, username, from_type, source_id)
+            )
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"添加待关注粉丝失败: {e}")
+            return False
+            
+    def get_unprocessed_follow_fans(self, limit=50):
+        """获取未处理的待关注粉丝"""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT * FROM follow_fans WHERE processed = 0 ORDER BY created_at ASC LIMIT ?",
+            (limit,)
+        )
+        return cursor.fetchall()
+        
+    def mark_follow_fan_as_processed(self, fan_id):
+        """标记待关注粉丝为已处理"""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "UPDATE follow_fans SET processed = 1 WHERE id = ?",
+            (fan_id,)
+        )
+        self.conn.commit()
+        
+    def delete_follow_fan(self, fan_id):
+        """删除待关注粉丝记录"""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "DELETE FROM follow_fans WHERE id = ?",
+            (fan_id,)
+        )
+        self.conn.commit()
+        
+    def is_video_processed(self, video_url):
+        """
+        检查视频是否已经处理过
+        
+        参数:
+            video_url: 视频链接
+            
+        返回:
+            bool: 是否已处理
+        """
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "SELECT COUNT(*) FROM processed_videos WHERE video_url = ?",
+                (video_url,)
+            )
+            return cursor.fetchone()[0] > 0
+            
+        except Exception as e:
+            logger.error(f"检查视频处理状态失败: {str(e)}")
+            return False
+            
+    def mark_video_processed(self, video_url, success=True):
+        """
+        标记视频为已处理
+        
+        参数:
+            video_url: 视频链接
+            success: 处理是否成功
+        """
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "INSERT OR REPLACE INTO processed_videos (video_url, processed_time, success) VALUES (?, ?, ?)",
+                (video_url, datetime.now(), 1 if success else 0)
+            )
+            self.conn.commit()
+            logger.info(f"已标记视频 {video_url} 为已处理")
+            
+        except Exception as e:
+            logger.error(f"标记视频处理状态失败: {str(e)}") 

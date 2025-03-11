@@ -13,50 +13,49 @@ from datetime import datetime
 
 # 创建分类日志目录
 def setup_logging():
-    # 创建日期目录
-    today = datetime.now().strftime("%Y-%m-%d")
-    log_dir = os.path.join("logs", today, "app_logs")
+    """设置日志配置"""
+    # 创建日志目录
+    log_dir = os.path.join("logs", datetime.now().strftime("%Y-%m-%d"), "app_logs")
     os.makedirs(log_dir, exist_ok=True)
     
-    # 配置日志
-    logger.remove()  # 移除默认处理器
+    # 生成日志文件名
+    log_file = os.path.join(log_dir, f"douyin_bot_{datetime.now().strftime('%H-%M-%S')}.log")
+    
+    # 移除默认的日志处理器
+    logger.remove()
     
     # 添加文件日志处理器
-    log_file = os.path.join(log_dir, f"douyin_bot_{datetime.now().strftime('%H-%M-%S')}.log")
     logger.add(
-        log_file, 
-        rotation="100 MB", 
+        log_file,
+        rotation="500 MB",
+        retention="10 days",
         level="INFO",
         encoding="utf-8"
     )
     
     # 添加控制台日志处理器
-    logger.add(sys.stderr, level="INFO")
+    logger.add(
+        sys.stderr,
+        level="INFO"
+    )
     
     logger.info(f"日志文件路径: {log_file}")
 
 # 创建必要的目录
 def setup_directories():
-    # 创建基本目录
-    os.makedirs("logs", exist_ok=True)
-    os.makedirs("data", exist_ok=True)
+    """创建必要的目录"""
+    dirs = [
+        "logs",
+        "screenshots",
+        "data"
+    ]
     
-    # 创建日期目录
-    today = datetime.now().strftime("%Y-%m-%d")
-    
-    # 创建分类目录
-    categories = ["screenshot", "html", "error", "analysis"]
-    operations = ["user_profile", "before_click_fans", "after_click_fans", 
-                 "after_js_click_fans", "fans_page", "before_follow", 
-                 "after_follow", "error", "fans_elements"]
-    
-    for category in categories:
-        for operation in operations:
-            os.makedirs(os.path.join("logs", today, category, operation), exist_ok=True)
+    for dir_path in dirs:
+        os.makedirs(dir_path, exist_ok=True)
 
-def signal_handler(sig, frame):
-    """处理程序中断信号"""
-    logger.info("接收到中断信号，正在优雅退出...")
+def signal_handler(signum, frame):
+    """信号处理函数"""
+    logger.info(f"收到信号: {signum}")
     if 'bot' in globals():
         bot.stop()
     sys.exit(0)
@@ -80,7 +79,7 @@ def main():
         
         # 创建机器人实例
         global bot
-        bot = DouyinBot(config, db)
+        bot = DouyinBot(config=config, db=db)
         
         # 启动浏览器
         bot.start()
@@ -98,8 +97,14 @@ def main():
                 # 运行任务
                 task_result = bot.run_tasks()
                 
+                # 检查任务执行结果
+                if not task_result.get('success', False):
+                    error_reason = task_result.get('reason', '未知错误')
+                    logger.error(f"任务执行失败: {error_reason}")
+                    break  # 任务失败时退出循环
+                
                 # 根据任务结果决定休息时间
-                if task_result and task_result.get('task_type') == 'check_follows':
+                if task_result.get('task_type') == 'check_follows':
                     # 如果是检查关注列表任务完成，等待配置的间隔时间
                     interval = task_result.get('interval', 3600)
                     logger.info(f"检查关注列表任务完成，休息 {interval} 秒后执行下一轮任务")
@@ -110,14 +115,7 @@ def main():
                 
             except Exception as e:
                 logger.error(f"运行任务时出错: {str(e)}")
-                time.sleep(30)  # 出错后等待较长时间再重试
-                
-                # 尝试重新连接浏览器
-                try:
-                    bot.start()
-                except:
-                    logger.error("重新连接浏览器失败")
-                    time.sleep(60)  # 重连失败后等待更长时间
+                break  # 发生异常时退出循环
         
     except KeyboardInterrupt:
         logger.info("用户中断，程序退出")

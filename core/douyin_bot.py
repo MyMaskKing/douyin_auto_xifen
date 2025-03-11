@@ -9,27 +9,32 @@ from .user_profile import UserProfileManager
 from .fan_manager import FanManager
 from .follow_manager import FollowListManager
 from .follow_fans_manager import FollowFansManager
+from .video_comment_manager import VideoCommentManager
 from .task_runner import TaskRunner
 from .logger import logger
+from utils.config import load_config
+from utils.db import Database
 
 class DouyinBot:
     """抖音机器人主类，组合其他模块的功能"""
     
-    def __init__(self, config, db):
+    def __init__(self, config=None, db=None, config_path="config/config.yaml"):
         """
         初始化抖音机器人
         
         参数:
-            config: 配置对象
-            db: 数据库对象
+            config: 配置对象，如果为None则从config_path加载
+            db: 数据库对象，如果为None则创建新的
+            config_path: 配置文件路径，当config为None时使用
         """
-        self.config = config
-        self.db = db
+        self.config = config if config is not None else load_config(config_path)
+        self.db = db if db is not None else Database()
         self.browser_manager = None
         self.user_profile_manager = None
         self.fan_manager = None
         self.follow_manager = None
         self.follow_fans_manager = None
+        self.video_comment_manager = None
         self.task_runner = None
         
     def start(self):
@@ -56,6 +61,9 @@ class DouyinBot:
             # 初始化粉丝关注管理器
             self.follow_fans_manager = FollowFansManager(self.browser_manager, self.db, self.config)
             
+            # 初始化视频评论管理器
+            self.video_comment_manager = VideoCommentManager(self.browser_manager, self.db, self.config)
+            
             # 初始化任务运行器
             self.task_runner = TaskRunner(
                 self.browser_manager,
@@ -63,7 +71,9 @@ class DouyinBot:
                 self.fan_manager,
                 self.follow_manager,
                 self.db,
-                self.config
+                self.config,
+                follow_fans_manager=self.follow_fans_manager,
+                video_comment_manager=self.video_comment_manager
             )
             
             logger.info("抖音机器人启动成功")
