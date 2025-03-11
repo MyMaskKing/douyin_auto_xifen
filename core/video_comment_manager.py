@@ -138,40 +138,17 @@ class VideoCommentManager:
                 save_screenshot(self.driver, "send_comment_error")
                 return False
             
-            # 3. 获取评论总数
-            comment_count = 0
-            try:
-                comment_count_elements = self.driver.find_elements(By.XPATH, "//span[contains(text(), '评论')]/following-sibling::span")
-                if comment_count_elements:
-                    comment_count_text = comment_count_elements[0].text.strip()
-                    # 处理可能的"万"或"亿"单位
-                    if "万" in comment_count_text:
-                        comment_count = int(float(comment_count_text.replace("万", "")) * 10000)
-                    elif "亿" in comment_count_text:
-                        comment_count = int(float(comment_count_text.replace("亿", "")) * 100000000)
-                    else:
-                        comment_count = int(comment_count_text)
-                    
-                    logger.info(f"视频评论总数: {comment_count}")
-            except Exception as e:
-                logger.warning(f"获取评论总数失败: {str(e)}")
-                comment_count = 0
-            
-            # 4. 确定需要提取的评论数量
+            # 3. 提取评论用户
             max_extract = self.config.get('operation', {}).get('max_follow_per_video', 20)  # 从配置中获取每个视频最多提取的评论数
-            extract_count = min(max_extract, comment_count if comment_count > 0 else max_extract)
-            logger.info(f"计划提取 {extract_count} 条评论")
-            
-            # 5. 滚动加载评论并提取用户
             extracted_users = 0
-            max_scroll = 30  # 最多滚动30次，避免无限滚动
+            max_scroll = 100  # 增加最大滚动次数以获取更多评论
             scroll_count = 0
             processed_users = set()  # 用于去重
             
             # 获取配置中的最小提取用户数
             min_extract_users = self.config.get('operation', {}).get('min_extract_users_per_video', 5)
             
-            while extracted_users < extract_count and scroll_count < max_scroll:
+            while extracted_users < max_extract and scroll_count < max_scroll:
                 # 获取当前页面上的评论用户
                 comment_elements = self.driver.find_elements(By.XPATH, "//div[contains(@class, 'comment-item')]")
                 
@@ -205,17 +182,17 @@ class VideoCommentManager:
                             processed_users.add(user_id)  # 记录已处理的用户ID
                             if self.db.add_follow_fan(user_id, username, "video_comment", video_url):
                                 extracted_users += 1
-                                logger.info(f"已提取评论用户 {extracted_users}/{extract_count}: {username} ({user_id})")
+                                logger.info(f"已提取评论用户 {extracted_users}/{max_extract}: {username} ({user_id})")
                         
                         # 如果已经提取足够数量的用户，则退出
-                        if extracted_users >= extract_count:
+                        if extracted_users >= max_extract:
                             break
                     except Exception as e:
                         logger.warning(f"提取评论用户失败: {str(e)}")
                         continue
                 
                 # 如果已经提取足够数量的用户，则退出
-                if extracted_users >= extract_count:
+                if extracted_users >= max_extract:
                     break
                 
                 # 滚动加载更多评论
@@ -284,152 +261,4 @@ class VideoCommentManager:
         except Exception as e:
             error_msg = f"执行视频评论任务失败: {str(e)}"
             logger.error(error_msg)
-            return {'success': False, 'reason': error_msg}
-            
-    def extract_commenters_from_video(self, video_id):
-        """
-        从视频评论中提取用户并添加到follow_fans表
-        
-        参数:
-            video_id: 视频ID
-            
-        返回:
-            bool: 是否成功提取
-        """
-        try:
-            # 访问视频页面
-            logger.info(f"访问视频页面准备提取评论用户: {video_id}")
-            self.driver.get(f"https://www.douyin.com/video/{video_id}")
-            self.random_sleep(5, 8)
-            
-            # 保存页面截图
-            save_screenshot(self.driver, f"extract_commenters_{video_id}", level="NORMAL")
-            
-            # 滚动到评论区
-            logger.info("滚动到评论区")
-            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight / 2);")
-            self.random_sleep(2, 3)
-            
-            # 获取评论总数
-            comment_count = 0
-            try:
-                comment_count_elements = self.driver.find_elements(By.XPATH, "//span[contains(text(), '评论')]/following-sibling::span")
-                if comment_count_elements:
-                    comment_count_text = comment_count_elements[0].text.strip()
-                    # 处理可能的"万"或"亿"单位
-                    if "万" in comment_count_text:
-                        comment_count = int(float(comment_count_text.replace("万", "")) * 10000)
-                    elif "亿" in comment_count_text:
-                        comment_count = int(float(comment_count_text.replace("亿", "")) * 100000000)
-                    else:
-                        comment_count = int(comment_count_text)
-                    
-                    logger.info(f"视频评论总数: {comment_count}")
-            except Exception as e:
-                logger.warning(f"获取评论总数失败: {str(e)}")
-                comment_count = 0
-            
-            # 确定需要提取的评论数量
-            extract_count = 20  # 默认提取20条评论
-            
-            # 如果评论数大于1000，则抽取40%的数据
-            if comment_count > 1000:
-                extract_count = min(int(comment_count * 0.4), 100)  # 最多提取100条，避免过多滚动
-                logger.info(f"评论数大于1000，将抽取40%的数据，约 {extract_count} 条")
-            else:
-                logger.info(f"评论数较少，将提取 {extract_count} 条评论")
-            
-            # 获取配置中的最小提取用户数
-            min_extract_users = self.config.get('operation', {}).get('min_extract_users_per_video', 5)
-            
-            # 滚动加载评论并提取用户
-            extracted_users = 0
-            max_scroll = 30  # 最多滚动30次，避免无限滚动
-            scroll_count = 0
-            processed_users = set()  # 用于去重
-            
-            while extracted_users < extract_count and scroll_count < max_scroll:
-                # 获取当前页面上的评论用户
-                for selector in VIDEO_COMMENT_USER['COMMENT_ITEM']:
-                    try:
-                        comment_elements = self.driver.find_elements(By.XPATH, selector)
-                        if comment_elements:
-                            logger.info(f"找到 {len(comment_elements)} 条评论: {selector}")
-                            break
-                    except:
-                        continue
-                
-                if not comment_elements:
-                    logger.warning("未找到评论元素")
-                    continue
-                
-                for comment_element in comment_elements:
-                    try:
-                        # 提取用户ID和用户名
-                        user_id = None
-                        username = None
-                        
-                        # 尝试获取用户链接和ID
-                        for link_selector in VIDEO_COMMENT_USER['USER_LINK']:
-                            try:
-                                user_link = comment_element.find_element(By.XPATH, link_selector)
-                                if user_link:
-                                    user_href = user_link.get_attribute("href")
-                                    user_id = user_href.split("/user/")[1].split("?")[0]
-                                    break
-                            except:
-                                continue
-                        
-                        # 尝试获取用户名
-                        for name_selector in VIDEO_COMMENT_USER['USERNAME']:
-                            try:
-                                username_element = comment_element.find_element(By.XPATH, name_selector)
-                                if username_element:
-                                    username = username_element.text.strip()
-                                    break
-                            except:
-                                continue
-                        
-                        # 添加到follow_fans表
-                        if user_id and username:
-                            if self.db.add_follow_fan(user_id, username, "video_comment", video_id):
-                                extracted_users += 1
-                                logger.info(f"已提取评论用户 {extracted_users}/{extract_count}: {username} ({user_id})")
-                        
-                        # 如果已经提取足够数量的用户，则退出
-                        if extracted_users >= extract_count:
-                            break
-                    except Exception as e:
-                        logger.warning(f"提取评论用户失败: {str(e)}")
-                        continue
-                
-                # 如果已经提取足够数量的用户，则退出
-                if extracted_users >= extract_count:
-                    break
-                
-                # 滚动加载更多评论
-                logger.info(f"滚动加载更多评论 ({scroll_count+1}/{max_scroll})")
-                try:
-                    # 尝试滚动评论列表
-                    self.driver.execute_script("document.querySelector('.comment-list').scrollTop += 1000;")
-                except:
-                    # 如果失败，尝试滚动整个页面
-                    self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                self.random_sleep(2, 3)
-                scroll_count += 1
-            
-            logger.info(f"成功从视频 {video_id} 中提取 {extracted_users} 个评论用户")
-            
-            # 只有当提取到足够数量的用户时，才标记视频为已处理
-            if extracted_users >= min_extract_users:
-                logger.info(f"已达到最小提取用户数 {min_extract_users}，标记视频为已处理")
-                self.db.mark_target_video_processed(video_id, comment_count=extracted_users)
-                return True
-            else:
-                logger.warning(f"提取的用户数 {extracted_users} 小于最小要求 {min_extract_users}，视频将不会被标记为已处理")
-                return False
-            
-        except Exception as e:
-            logger.error(f"从视频评论中提取用户失败: {str(e)}")
-            save_screenshot(self.driver, f"extract_commenters_error_{video_id}")
-            return False 
+            return {'success': False, 'reason': error_msg} 

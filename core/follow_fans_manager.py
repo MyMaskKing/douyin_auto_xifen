@@ -149,9 +149,9 @@ class FollowFansManager:
             # 查找私信按钮
             message_button = None
             message_button_selectors = [
-                "//button[contains(., '私信')]",
-                "//div[contains(@class, 'message-button')]",
-                "//div[contains(@class, 'private-message')]"
+                "//button[contains(@class, 'K8kpIsJm')]",
+                "//button[contains(@class, 'semi-button-secondary')][.//span[text()='私信']]",
+                "//button[contains(., '私信')]"
             ]
             
             for selector in message_button_selectors:
@@ -183,10 +183,9 @@ class FollowFansManager:
             # 查找私信输入框
             message_input = None
             message_input_selectors = [
-                "//input[contains(@placeholder, '发送消息')]",
-                "//textarea[contains(@placeholder, '发送消息')]",
-                "//div[contains(@class, 'message-input')]//input",
-                "//div[contains(@class, 'message-input')]//textarea"
+                "//div[contains(@class, 'public-DraftEditor-content')]",
+                "//div[contains(@class, 'DraftEditor-editorContainer')]//div[@contenteditable='true']",
+                "//div[contains(@class, 'im-richtext-container')]//div[@contenteditable='true']"
             ]
             
             for selector in message_input_selectors:
@@ -203,15 +202,32 @@ class FollowFansManager:
             
             # 输入私信内容
             logger.info(f"输入私信内容: {message}")
-            message_input.clear()
-            message_input.send_keys(message)
-            self.random_sleep(1, 2)
+            try:
+                # 先点击输入框激活它
+                message_input.click()
+                self.random_sleep(1, 2)
+                
+                # 清空输入框
+                message_input.clear()
+                self.random_sleep(0.5, 1)
+                
+                # 模拟人工输入
+                for char in message:
+                    message_input.send_keys(char)
+                    # 随机等待一个很短的时间，模拟人工输入速度
+                    time.sleep(random.uniform(0.1, 0.3))
+                
+                self.random_sleep(1, 2)
+            except Exception as e:
+                logger.error(f"输入私信内容失败: {str(e)}")
+                return False
             
             # 查找发送按钮
             send_button = None
             send_button_selectors = [
-                "//button[contains(., '发送')]",
-                "//div[contains(@class, 'send-button')]"
+                "//span[contains(@class, 'PygT7Ced') and contains(@class, 'JnY63Rbk') and contains(@class, 'e2e-send-msg-btn')]",
+                "//span[contains(@class, 'PygT7Ced')]//svg",
+                "//span[contains(@class, 'e2e-send-msg-btn')]"
             ]
             
             for selector in send_button_selectors:
@@ -226,16 +242,23 @@ class FollowFansManager:
                 # 点击发送按钮
                 logger.info("点击发送按钮")
                 try:
+                    # 尝试直接点击
                     send_button.click()
                     self.random_sleep(2, 3)
                 except:
-                    # 尝试使用JavaScript点击
                     try:
-                        self.driver.execute_script("arguments[0].click();", send_button)
+                        # 如果直接点击失败，尝试点击父元素
+                        parent = send_button.find_element(By.XPATH, "..")
+                        parent.click()
                         self.random_sleep(2, 3)
-                    except Exception as e:
-                        logger.error(f"点击发送按钮失败: {str(e)}")
-                        return False
+                    except:
+                        # 如果点击父元素也失败，尝试使用JavaScript点击
+                        try:
+                            self.driver.execute_script("arguments[0].click();", send_button)
+                            self.random_sleep(2, 3)
+                        except Exception as e:
+                            logger.error(f"点击发送按钮失败: {str(e)}")
+                            return False
             else:
                 # 如果没有找到发送按钮，尝试按回车键发送
                 logger.info("未找到发送按钮，尝试按回车键发送")
@@ -244,22 +267,22 @@ class FollowFansManager:
             
             # 检查是否发送成功
             try:
-                # 等待消息出现在页面上
-                self.wait.until(EC.presence_of_element_located((By.XPATH, f"//div[contains(@class, 'message-item')][contains(., '{message}')]")))
+                # 等待发送按钮变为灰色状态（JnY63Rbk类名消失）
+                self.wait.until(lambda d: len(d.find_elements(By.XPATH, "//span[contains(@class, 'PygT7Ced') and contains(@class, 'e2e-send-msg-btn') and not(contains(@class, 'JnY63Rbk'))]")) > 0)
                 logger.info(f"成功发送私信给用户: {username} ({user_id})")
                 return True
             except Exception as e:
                 logger.warning(f"无法确认私信是否发送成功: {str(e)}")
-                # 尝试再次检查
-                time.sleep(3)
-                page_source = self.driver.page_source
-                if message in page_source:
-                    logger.info(f"通过页面源码确认私信发送成功: {username} ({user_id})")
-                    return True
-                else:
-                    logger.error(f"私信可能未发送成功: {username} ({user_id})")
-                    save_screenshot(self.driver, f"send_message_failed_{user_id}")
-                    return False
+                # 再次检查按钮状态
+                try:
+                    time.sleep(2)
+                    # 如果找到了灰色状态的按钮，说明发送成功
+                    if len(self.driver.find_elements(By.XPATH, "//span[contains(@class, 'PygT7Ced') and contains(@class, 'e2e-send-msg-btn') and not(contains(@class, 'JnY63Rbk'))]")) > 0:
+                        logger.info(f"通过按钮状态确认私信发送成功: {username} ({user_id})")
+                        return True
+                except:
+                    pass
+                return False
                 
         except Exception as e:
             logger.error(f"发送私信失败: {str(e)}")
