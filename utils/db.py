@@ -932,7 +932,7 @@ class Database:
         """
         获取需要发送私信的粉丝
         
-        返回：需要发送私信的粉丝列表，每个粉丝包含user_id、username和days_followed
+        返回：需要发送私信的粉丝列表，每个粉丝包含user_id、username和days_since_follow
         """
         try:
             cursor = self.conn.cursor()
@@ -941,34 +941,59 @@ class Database:
             # 获取需要发送私信的粉丝
             cursor.execute(
                 """
-                SELECT user_id, username, days_followed
-                FROM fans
-                WHERE days_followed < 3  -- 只处理关注不超过3天的粉丝
+                SELECT f.user_id, f.username, 
+                       CAST((julianday(?) - julianday(f.first_seen_time)) AS INTEGER) as days_since_follow
+                FROM fans f
+                WHERE julianday(?) - julianday(f.first_seen_time) <= 2  -- 处理前三天的粉丝（0,1,2分别代表第一、二、三天）
                 AND (
-                    last_message_time IS NULL  -- 从未发送过私信
+                    f.last_message_time IS NULL  -- 从未发送过私信
                     OR (
-                        date(last_message_time) < date(?)  -- 今天还没有发送过私信
-                        AND julianday(?) - julianday(last_message_time) >= 1  -- 距离上次私信至少1天
+                        date(f.last_message_time) < date(?)  -- 今天还没有发送过私信
+                        AND julianday(?) - julianday(f.last_message_time) >= 1  -- 距离上次私信至少1天
                     )
                 )
-                ORDER BY first_seen_time ASC
+                ORDER BY f.first_seen_time ASC
                 LIMIT ?
                 """,
-                (now, now, limit)
+                (now, now, now, now, limit)
             )
             
-            fans = cursor.fetchall()
-            return [{'user_id': f[0], 'username': f[1], 'days_followed': f[2]} for f in fans]
+            # 获取列名
+            columns = [description[0] for description in cursor.description]
+            
+            # 获取结果
+            rows = cursor.fetchall()
+            
+            # 将结果转换为字典列表
+            fans = []
+            for row in rows:
+                fan_dict = dict(zip(columns, row))
+                fans.append(fan_dict)
+            
+            return fans
             
         except Exception as e:
             logger.error(f"获取需要发送私信的粉丝失败: {str(e)}")
             return []
             
-    def update_fan_interaction(self, user_id, days_followed):
+    def update_fan_interaction(self, user_id):
         """更新粉丝互动状态"""
         try:
             cursor = self.conn.cursor()
             now = datetime.now()
+            
+            # 获取粉丝的first_seen_time
+            cursor.execute(
+                "SELECT first_seen_time FROM fans WHERE user_id = ?",
+                (user_id,)
+            )
+            result = cursor.fetchone()
+            if not result:
+                logger.error(f"未找到用户 {user_id} 的记录")
+                return False
+                
+            first_seen_time = datetime.strptime(result[0], '%Y-%m-%d %H:%M:%S.%f')
+            days_since_follow = (now - first_seen_time).days
             
             # 更新粉丝状态
             cursor.execute(
@@ -978,7 +1003,7 @@ class Database:
                     is_valid_fan = CASE WHEN ? >= 3 THEN 1 ELSE 0 END
                 WHERE user_id = ?
                 """,
-                (days_followed, days_followed, user_id)
+                (days_since_follow, days_since_follow, user_id)
             )
             
             self.conn.commit()

@@ -538,6 +538,9 @@ class FanManager:
         参数:
             user_id: 粉丝ID
             username: 粉丝用户名
+            
+        返回:
+            bool: 互动是否成功启动
         """
         try:
             logger.info(f"开始与新粉丝 {username} ({user_id}) 的互动流程")
@@ -545,32 +548,41 @@ class FanManager:
             # 检查今日私信配额
             if self.db.get_today_message_count() >= self.config.get('operation', {}).get('max_messages_per_day', 100):
                 logger.info("今日私信数量已达上限，暂停私信互动")
-                return
+                return False
             
             # 发送第一天的欢迎消息
-            self.send_welcome_message(user_id, username)
+            if self.send_welcome_message(user_id, username):
+                logger.info(f"成功启动与粉丝 {username} 的互动流程")
+                return True
+            else:
+                logger.warning(f"启动与粉丝 {username} 的互动流程失败")
+                return False
             
         except Exception as e:
             logger.error(f"启动粉丝互动流程失败: {str(e)}")
+            return False
 
     def send_welcome_message(self, user_id, username):
         """发送欢迎消息给新粉丝"""
         try:
-            # 获取欢迎消息模板
-            welcome_templates = self.config.get('operation', {}).get('message', {}).get('templates', {}).get('day1', [
-                "你好呀，很高兴认识你~",
-                "Hi，我是{username}，谢谢你的关注！",
-                "嗨，感谢关注，希望我们能成为好朋友~"
-            ])
+            # 检查今日私信配额
+            if self.db.get_today_message_count() >= self.config.get('operation', {}).get('max_messages_per_day', 100):
+                logger.info("今日私信数量已达上限，暂停私信互动")
+                return False
             
-            # 随机选择一个欢迎消息
-            if welcome_templates:
-                # 发送私信
-                self.message_manager.send_message(user_id, username, 0)  # 0表示第一天的消息
-                logger.info(f"已发送欢迎消息给新粉丝 {username}")
+            # 发送第一天的私信（days_since_follow = 0）
+            if self.message_manager.send_message(user_id, username, 0):
+                # 更新粉丝互动状态
+                self.db.update_fan_interaction(user_id)
+                logger.info(f"已成功发送欢迎消息给新粉丝 {username}")
+                return True
+            else:
+                logger.warning(f"发送欢迎消息给新粉丝 {username} 失败")
+                return False
             
         except Exception as e:
             logger.error(f"发送欢迎消息失败: {str(e)}")
+            return False
 
     def run_fan_interaction_task(self):
         """
@@ -590,7 +602,7 @@ class FanManager:
             
             if today_messages >= max_messages_per_day:
                 logger.info(f"今日私信数量 ({today_messages}) 已达上限 ({max_messages_per_day})")
-                return
+                return True
             
             # 获取需要互动的粉丝
             remaining_messages = max_messages_per_day - today_messages
@@ -598,31 +610,45 @@ class FanManager:
             
             if not fans_need_message:
                 logger.info("没有需要互动的粉丝")
-                return
+                return True
             
             logger.info(f"找到 {len(fans_need_message)} 个需要互动的粉丝")
             
             # 处理每个需要互动的粉丝
+            success_count = 0
             for fan in fans_need_message:
                 try:
+                    # 检查必要的字段是否存在
+                    if not all(key in fan for key in ['user_id', 'username', 'days_since_follow']):
+                        logger.warning(f"粉丝数据缺少必要字段: {fan}")
+                        continue
+                        
                     user_id = fan['user_id']
                     username = fan['username']
-                    days_followed = fan['days_followed']
+                    days_since_follow = fan['days_since_follow']
+                    
+                    # 验证days_since_follow的值是否有效
+                    if not isinstance(days_since_follow, int) or days_since_follow not in [0, 1, 2]:
+                        logger.warning(f"粉丝 {username} 的days_since_follow值无效: {days_since_follow}")
+                        continue
                     
                     # 发送对应天数的互动消息
-                    if self.message_manager.send_message(user_id, username, days_followed):
+                    if self.message_manager.send_message(user_id, username, days_since_follow):
+                        success_count += 1
                         # 更新粉丝互动状态
-                        self.db.update_fan_interaction(user_id, days_followed + 1)
-                        logger.info(f"完成与粉丝 {username} 的第 {days_followed + 1} 天互动")
+                        self.db.update_fan_interaction(user_id)
+                        logger.info(f"完成与粉丝 {username} 的第 {days_since_follow + 1} 天互动")
                     
                     # 随机延迟，避免操作过快
                     self.random_sleep(2, 5)
                     
                 except Exception as e:
-                    logger.error(f"处理粉丝 {fan.get('username')} 的互动任务失败: {str(e)}")
+                    logger.error(f"处理粉丝 {fan.get('username', 'unknown')} 的互动任务失败: {str(e)}")
                     continue
             
-            logger.info("粉丝互动任务执行完成")
+            logger.info(f"粉丝互动任务执行完成，成功发送 {success_count}/{len(fans_need_message)} 条私信")
+            return True
             
         except Exception as e:
             logger.error(f"执行粉丝互动任务失败: {str(e)}")
+            return False

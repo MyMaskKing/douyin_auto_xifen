@@ -60,32 +60,64 @@ class MessageManager:
             ])
         }
 
-    def get_message_template(self, days_followed: int, username: str) -> str:
-        """根据关注天数获取消息模板"""
-        if days_followed not in self.message_templates:
-            return ""
+    def get_message_template(self, days_since_follow: int, username: str) -> str:
+        """
+        获取指定天数的消息模板
+        
+        参数:
+            days_since_follow: 粉丝关注天数（0,1,2分别代表第一、二、三天）
+            username: 用户名，用于替换模板中的变量
             
-        templates = self.message_templates[days_followed]
-        message = random.choice(templates)
-        return message.format(username=username)
+        返回:
+            str: 消息模板内容，如果没有找到合适的模板则返回None
+        """
+        try:
+            # 验证days_since_follow的值
+            if not isinstance(days_since_follow, int) or days_since_follow not in [0, 1, 2]:
+                logger.warning(f"无效的days_since_follow值: {days_since_follow}")
+                return None
+                
+            # 获取消息模板配置
+            message_templates = self.config.get('message_templates', {})
+            if not message_templates:
+                logger.error("配置文件中未找到消息模板")
+                return None
+                
+            # 获取对应天数的模板列表
+            template_key = f"day_{days_since_follow + 1}"  # 转换为day_1, day_2, day_3
+            templates = message_templates.get(template_key, [])
+            
+            if not templates:
+                logger.warning(f"未找到第 {days_since_follow + 1} 天的消息模板")
+                return None
+                
+            # 随机选择一个模板
+            message_template = random.choice(templates)
+            
+            # 返回格式化后的消息
+            return message_template.format(username=username)
+            
+        except Exception as e:
+            logger.error(f"获取消息模板失败: {str(e)}")
+            return None
     
-    def send_message(self, user_id: str, username: str, days_followed: int) -> bool:
+    def send_message(self, user_id: str, username: str, days_since_follow: int) -> bool:
         """
         发送私信给指定用户
         
         参数:
             user_id: 用户ID
             username: 用户名
-            days_followed: 已关注天数，用于选择对应的消息模板
+            days_since_follow: 粉丝关注天数（0,1,2分别代表第一、二、三天）
             
         返回:
-            bool: 发送成功返回True，否则返回False
+            bool: 是否成功发送
         """
         try:
-            # 获取消息模板
-            message = self.get_message_template(days_followed, username)
+            # 获取对应天数的消息模板
+            message = self.get_message_template(days_since_follow, username)
             if not message:
-                logger.warning(f"未找到适合的消息模板: {user_id}, days_followed={days_followed}")
+                logger.error(f"无法获取第 {days_since_follow + 1} 天的消息模板")
                 return False
                 
             # 访问用户主页
@@ -99,37 +131,87 @@ class MessageManager:
             # 查找私信按钮
             message_button = None
             message_button_selectors = [
-                "//button[contains(@class, 'semi-button-secondary') and contains(@class, 'semi-button')]//span[text()='私信']/parent::button",
-                "//button[contains(@class, 'K8kpIsJm')][.//span[text()='私信']]",
-                "//button[contains(@class, 'semi-button-secondary')][.//span[text()='私信']]",
-                "//button[contains(@class, 'semi-button')]//span[text()='私信']/parent::button"
+                # 最精确的选择器，基于完整的类名组合
+                "//div[contains(@class, 'XB2sFwjg')]//button[contains(@class, 'semi-button-secondary') and contains(@class, 'K8kpIsJm')]//span[text()='私信']/parent::button",
+                
+                # 基于父div和类名组合的选择器
+                "//div[contains(@class, 'XB2sFwjg')]//button[contains(@class, 'K8kpIsJm')]//span[text()='私信']/parent::button",
+                
+                # 基于特定类名组合的选择器
+                "//button[contains(@class, 'semi-button-secondary') and contains(@class, 'K8kpIsJm')]//span[text()='私信']/parent::button",
+                
+                # 基于按钮内容和类名的选择器
+                "//button[contains(@class, 'K8kpIsJm')]//span[text()='私信']/parent::button",
+                
+                # 基于semi-button类和内容的选择器
+                "//button[contains(@class, 'semi-button-secondary')]//span[text()='私信']/parent::button",
+                
+                # 最宽松的选择器，仅基于按钮内容
+                "//button//span[text()='私信']/parent::button"
             ]
             
             for selector in message_button_selectors:
                 try:
-                    message_button = self.driver.find_element(By.XPATH, selector)
-                    logger.info(f"找到私信按钮: {selector}")
-                    break
-                except:
+                    elements = self.driver.find_elements(By.XPATH, selector)
+                    for element in elements:
+                        # 检查按钮是否可见且可点击
+                        if element.is_displayed() and element.is_enabled():
+                            message_button = element
+                            logger.info(f"找到可用的私信按钮: {selector}")
+                            break
+                    if message_button:
+                        break
+                except Exception as e:
                     continue
             
             if not message_button:
                 logger.warning(f"未找到私信按钮: {username} ({user_id})")
+                save_screenshot(self.driver, f"no_message_button_{user_id}")
                 return False
             
             # 点击私信按钮
-            logger.info(f"点击私信按钮: {username} ({user_id})")
-            try:
-                message_button.click()
-                self.random_sleep(2, 3)
-            except:
-                # 尝试使用JavaScript点击
+            logger.info(f"尝试点击私信按钮: {username} ({user_id})")
+            click_success = False
+            
+            # 尝试多种点击方法
+            click_methods = [
+                # 方法1: 直接点击
+                lambda: message_button.click(),
+                
+                # 方法2: 使用JavaScript点击
+                lambda: self.driver.execute_script("arguments[0].click();", message_button),
+                
+                # 方法3: 使用ActionChains点击
+                lambda: ActionChains(self.driver).move_to_element(message_button).click().perform(),
+                
+                # 方法4: 先移动到元素，等待后再点击
+                lambda: (ActionChains(self.driver).move_to_element(message_button).perform(), 
+                        time.sleep(1), 
+                        message_button.click()),
+                
+                # 方法5: 使用JavaScript滚动到元素后点击
+                lambda: (self.driver.execute_script("arguments[0].scrollIntoView(true);", message_button),
+                        time.sleep(1),
+                        message_button.click())
+            ]
+            
+            for i, click_method in enumerate(click_methods, 1):
                 try:
-                    self.driver.execute_script("arguments[0].click();", message_button)
+                    click_method()
                     self.random_sleep(2, 3)
+                    # 验证点击是否成功（检查私信对话框是否出现）
+                    if len(self.driver.find_elements(By.XPATH, "//div[contains(@class, 'im-richtext-container')]")) > 0:
+                        click_success = True
+                        logger.info(f"成功点击私信按钮（方法{i}）")
+                        break
                 except Exception as e:
-                    logger.error(f"点击私信按钮失败: {str(e)}")
-                    return False
+                    logger.warning(f"点击方法{i}失败: {str(e)}")
+                    continue
+            
+            if not click_success:
+                logger.error(f"所有点击方法都失败了: {username} ({user_id})")
+                save_screenshot(self.driver, f"click_message_button_failed_{user_id}")
+                return False
             
             # 查找私信输入框
             message_input = None
@@ -285,14 +367,14 @@ class MessageManager:
                 try:
                     user_id = fan['user_id']
                     username = fan['username']
-                    days_followed = fan['days_followed']
+                    days_since_follow = fan['days_since_follow']
                     
                     # 发送私信
-                    if self.send_message(user_id, username, days_followed):
+                    if self.send_message(user_id, username, days_since_follow):
                         success_count += 1
                         # 更新粉丝互动状态
-                        self.db.update_fan_interaction(user_id, days_followed + 1)
-                        logger.info(f"完成与粉丝 {username} 的第 {days_followed + 1} 天互动")
+                        self.db.update_fan_interaction(user_id)
+                        logger.info(f"完成与粉丝 {username} 的第 {days_since_follow + 1} 天互动")
                     
                     # 随机延迟，避免操作过快
                     time.sleep(random.uniform(2, 5))
