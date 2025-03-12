@@ -88,27 +88,27 @@ class TaskRunner:
             features = self.config.get('features', {})
             unfollow_enabled = features.get('unfollow_users', False)
             check_follows_enabled = features.get('check_follows', False)
-            follow_fans_enabled = features.get('follow_fans', False)
             check_fans_enabled = features.get('check_fans', False)
             follow_back_enabled = features.get('follow_back', False)
             follow_video_fans_enabled = features.get('follow_video_fans', False)
-            extract_commenters_enabled = features.get('extract_commenters', False)
+            get_video_reviewers_enabled = features.get('get_video_reviewers', False)
+            fan_interaction_enabled = features.get('fan_interaction', False)
             
             logger.info(
-                f"功能开关状态: 取关={unfollow_enabled}, "
-                f"检查关注列表={check_follows_enabled}, "
-                f"关注粉丝={follow_fans_enabled}, "
+                f"功能开关状态: 检查关注列表={check_follows_enabled}, "
+                f"取关={unfollow_enabled}, "
                 f"检查粉丝列表={check_fans_enabled}, "
                 f"回关={follow_back_enabled}, "
+                f"粉丝私信互动={fan_interaction_enabled}, "
                 f"关注视频评论者={follow_video_fans_enabled}, "
-                f"提取评论用户={extract_commenters_enabled}"
+                f"提取评论用户={get_video_reviewers_enabled}"
             )
             
             # 记录是否执行了视频相关任务
             video_tasks_executed = False
             
             # 第一步：执行视频评论和提取用户任务
-            if follow_video_fans_enabled:
+            if get_video_reviewers_enabled:
                 result = self.video_comment_manager.run_video_comment_task()
                 if not result['success']:
                     logger.error("视频评论任务执行失败")
@@ -116,32 +116,7 @@ class TaskRunner:
                 logger.info("视频评论任务执行成功")
                 video_tasks_executed = True
             
-            # 第二步：提取评论用户任务
-            if extract_commenters_enabled:
-                try:
-                    # 获取目标视频列表
-                    target_videos = self.config.get('target_videos', [])
-                    
-                    if not target_videos:
-                        logger.warning("未配置目标视频，跳过提取评论用户任务")
-                    else:
-                        # 按顺序处理视频列表
-                        for video_url in target_videos:
-                            if not self.db.is_video_processed(video_url):
-                                logger.info(f"开始从视频提取评论用户: {video_url}")
-                                if self.video_comment_manager.extract_commenters_from_video(video_url):
-                                    self.db.mark_video_processed(video_url)
-                                    logger.info(f"成功从视频提取评论用户: {video_url}")
-                                else:
-                                    logger.error(f"从视频提取评论用户失败: {video_url}")
-                    video_tasks_executed = True
-                except Exception as e:
-                    logger.error(f"执行提取评论用户任务时出错: {str(e)}")
-                    return {'success': False, 'reason': str(e)}
-            else:
-                logger.info("提取评论用户功能已禁用，跳过任务")
-            
-            # 第三步：执行关注视频评论者任务
+            # 第二步：执行关注视频评论者任务
             if follow_video_fans_enabled:
                 try:
                     # 更新配置中的视频关注开关
@@ -169,7 +144,7 @@ class TaskRunner:
                 check_follows_enabled = False
                 unfollow_enabled = False
             
-            # 第四步：执行取关任务（如果没有执行视频相关任务）
+            # 第三步：执行取关任务（如果没有执行视频相关任务）
             if unfollow_enabled:
                 try:
                     if self.run_unfollow_task():
@@ -185,7 +160,7 @@ class TaskRunner:
             else:
                 logger.info("取关功能已禁用或已执行视频相关任务，跳过取关任务")
             
-            # 第五步：执行检查关注列表任务（如果没有执行视频相关任务）
+            # 第四步：执行检查关注列表任务（如果没有执行视频相关任务）
             if check_follows_enabled:
                 try:
                     if self.follow_list_manager.run_check_follows_task():
@@ -208,7 +183,7 @@ class TaskRunner:
             else:
                 logger.info("检查关注列表功能已禁用或已执行视频相关任务，跳过检查关注列表任务")
             
-            # 第六步：执行检查粉丝列表任务（放在最后执行）
+            # 第五步：执行检查粉丝列表任务（放在最后执行）
             if check_fans_enabled:
                 try:
                     if self.fan_manager.run_check_fans_task():
@@ -224,7 +199,7 @@ class TaskRunner:
             else:
                 logger.info("检查粉丝列表功能已禁用，跳过检查粉丝列表任务")
             
-            # 第七步：执行回关任务（放在最后执行）
+            # 第六步：执行回关任务（放在最后执行）
             if follow_back_enabled:
                 try:
                     if self.fan_manager.run_follow_back_task():
@@ -240,8 +215,7 @@ class TaskRunner:
             else:
                 logger.info("回关功能已禁用，跳过回关任务")
 
-            # 第八步：执行粉丝私信互动任务
-            fan_interaction_enabled = features.get('fan_interaction', True)
+            # 第七步：执行粉丝私信互动任务
             if fan_interaction_enabled:
                 try:
                     if self.fan_manager.run_fan_interaction_task():

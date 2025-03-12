@@ -101,7 +101,15 @@ def main():
                 if not task_result.get('success', False):
                     error_reason = task_result.get('reason', '未知错误')
                     logger.error(f"任务执行失败: {error_reason}")
-                    break  # 任务失败时退出循环
+                    
+                    # 等待用户输入决定是否继续
+                    user_input = input("任务执行遇到问题，是否继续执行？(y/n): ")
+                    if user_input.lower() != 'y':
+                        logger.info("用户选择终止任务")
+                        break
+                    else:
+                        logger.info("用户选择继续执行任务")
+                        continue
                 
                 # 根据任务结果决定休息时间
                 if task_result.get('task_type') == 'check_follows':

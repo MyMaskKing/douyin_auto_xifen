@@ -16,15 +16,14 @@ target_videos:  # 目标视频列表（想要评论和获取用户的视频）
   
 # 功能开关配置
 features:
-  follow_fans: true      # 是否启用关注粉丝功能
-  check_follows: true    # 是否启用审查关注列表功能
-  unfollow_users: true   # 是否启用取关功能
-  check_fans: true       # 是否启用检查粉丝列表功能
-  follow_back: true      # 是否启用回关功能
-  follow_video_fans: true # 是否启用关注视频评论者功能
-  comment_video: true    # 是否启用视频评论功能
-  extract_commenters: true # 是否启用提取评论用户功能
-
+  get_video_reviewers: true  # 是否启用提取评论用户功能能（关注粉丝功能）
+  follow_video_fans: true  # 是否启用视频评论者关注功能能（关注粉丝功能）
+  check_follows: false    # 是否启用审查关注列表功能能（关注列表功能）
+  unfollow_users: false   # 是否启用取关功能（关注列表功能）
+  check_fans: false      # 是否启用检查粉丝列表功能（粉丝列表功能）
+  follow_back: false     # 是否启用回关功能（粉丝列表功能）
+  fan_interaction: false   # 是否启用粉丝私信互动功能（粉丝列表功能）
+  
 # 操作配置
 operation:
   daily_follow_limit: 150  # 每日关注上限

@@ -122,21 +122,46 @@ class VideoCommentManager:
                 logger.info("点击发送按钮")
                 self.random_sleep(2, 3)
                 
-                # 等待发送按钮消失，确认发送成功
+                # 检查是否出现验证码或其他异常
                 try:
+                    # 等待发送按钮消失，确认发送成功
                     self.wait.until_not(
                         EC.presence_of_element_located((By.CLASS_NAME, "NUzvFSPe"))
                     )
                     logger.info("评论发送成功")
                 except:
-                    logger.error("评论可能发送失败，发送按钮未消失")
-                    save_screenshot(self.driver, "comment_send_error")
-                    return False
+                    logger.warning("评论发送状态未知，可能需要人工验证")
+                    save_screenshot(self.driver, "comment_send_status")
+                    
+                    # 等待用户确认
+                    user_input = input("请检查评论是否发送成功，如果需要验证码请完成验证。是否继续？(y/n): ")
+                    if user_input.lower() != 'y':
+                        logger.info("用户选择终止当前视频的处理")
+                        return False
+                    else:
+                        logger.info("用户确认继续执行")
                 
             except Exception as e:
-                logger.error(f"发送评论失败: {str(e)}")
+                logger.warning(f"发送评论遇到异常: {str(e)}")
                 save_screenshot(self.driver, "send_comment_error")
-                return False
+                
+                # 等待用户确认
+                user_input = input("发送评论遇到问题，是否重试？(y/n): ")
+                if user_input.lower() != 'y':
+                    logger.info("用户选择终止当前视频的处理")
+                    return False
+                else:
+                    logger.info("用户选择重试")
+                    # 重新尝试发送评论
+                    try:
+                        send_button = self.wait.until(
+                            EC.element_to_be_clickable((By.CLASS_NAME, "NUzvFSPe"))
+                        )
+                        self.driver.execute_script("arguments[0].click();", send_button)
+                        logger.info("重新尝试点击发送按钮")
+                    except:
+                        logger.error("重试发送评论失败")
+                        return False
             
             # 3. 提取评论用户
             max_extract = self.config.get('operation', {}).get('max_follow_per_video', 20)  # 从配置中获取每个视频最多提取的评论数
