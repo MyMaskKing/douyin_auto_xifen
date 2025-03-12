@@ -52,7 +52,22 @@ class Database:
                     follow_status TEXT,
                     is_processed INTEGER DEFAULT 0,
                     need_follow_back INTEGER DEFAULT 0,
-                    follow_back_time TIMESTAMP
+                    follow_back_time TIMESTAMP,
+                    days_followed INTEGER DEFAULT 0,  -- 已关注天数
+                    last_message_time TIMESTAMP,      -- 最后一次私信时间
+                    message_count INTEGER DEFAULT 0,  -- 私信次数
+                    is_valid_fan INTEGER DEFAULT 0    -- 是否是有效粉丝
+                )
+            ''')
+            
+            # 私信记录表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT,
+                    message TEXT,
+                    send_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES fans (user_id)
                 )
             ''')
             
@@ -79,7 +94,8 @@ class Database:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id TEXT,
                     action_type TEXT,
-                    action_time TIMESTAMP
+                    action_time TIMESTAMP,
+                    UNIQUE(user_id, action_type, action_time)
                 )
             ''')
             
@@ -704,10 +720,28 @@ class Database:
             return False
             
     def get_user_by_id(self, user_id):
-        """根据用户ID获取用户信息"""
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT * FROM follows WHERE user_id = ?", (user_id,))
-        return cursor.fetchone()
+        """
+        根据用户ID获取用户信息
+        
+        参数:
+            user_id: 用户ID
+            
+        返回:
+            dict: 包含用户信息的字典，如果用户不存在则返回None
+        """
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT * FROM fans WHERE user_id = ?", (user_id,))
+            row = cursor.fetchone()
+            
+            if row:
+                columns = [column[0] for column in cursor.description]
+                return dict(zip(columns, row))
+            return None
+            
+        except Exception as e:
+            logger.error(f"获取用户信息失败: {str(e)}")
+            return None
         
     # ===== follow_fans表操作方法 =====
     
@@ -792,4 +826,164 @@ class Database:
             logger.info(f"已标记视频 {video_url} 为已处理")
             
         except Exception as e:
-            logger.error(f"标记视频处理状态失败: {str(e)}") 
+            logger.error(f"标记视频处理状态失败: {str(e)}")
+            
+    def add_fan_record(self, user_id, username, follow_status="new_fan"):
+        """
+        添加新的粉丝记录
+        
+        参数:
+            user_id: 用户ID
+            username: 用户名
+            follow_status: 关注状态（new_fan/need_follow_back/mutual/requested）
+        """
+        try:
+            now = datetime.now()
+            cursor = self.conn.cursor()
+            
+            # 检查是否已存在该粉丝记录
+            cursor.execute("SELECT user_id, follow_status, first_seen_time FROM fans WHERE user_id = ?", (user_id,))
+            existing_fan = cursor.fetchone()
+            
+            if existing_fan:
+                # 更新粉丝记录
+                cursor.execute(
+                    """
+                    UPDATE fans 
+                    SET last_seen_time = ?,
+                        follow_status = ?,
+                        need_follow_back = CASE 
+                            WHEN ? = 'need_follow_back' THEN 1 
+                            ELSE need_follow_back 
+                        END
+                    WHERE user_id = ?
+                    """,
+                    (now, follow_status, follow_status, user_id)
+                )
+                logger.info(f"更新粉丝记录: {username} ({user_id}), 状态: {follow_status}")
+            else:
+                # 添加新的粉丝记录
+                cursor.execute(
+                    """
+                    INSERT INTO fans (
+                        user_id, username, first_seen_time, last_seen_time,
+                        follow_status, need_follow_back, days_followed,
+                        is_processed, is_valid_fan
+                    ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0)
+                    """,
+                    (user_id, username, now, now, follow_status, 1 if follow_status == "need_follow_back" else 0)
+                )
+                logger.info(f"添加新粉丝记录: {username} ({user_id}), 状态: {follow_status}")
+            
+            self.conn.commit()
+            return True
+            
+        except Exception as e:
+            logger.error(f"添加粉丝记录失败: {str(e)}")
+            return False
+            
+    def add_message_record(self, user_id, message):
+        """添加私信记录"""
+        try:
+            now = datetime.now()
+            cursor = self.conn.cursor()
+            
+            # 添加私信记录
+            cursor.execute(
+                "INSERT INTO messages (user_id, message, send_time) VALUES (?, ?, ?)",
+                (user_id, message, now)
+            )
+            
+            # 更新粉丝表中的私信相关字段
+            cursor.execute(
+                """
+                UPDATE fans 
+                SET last_message_time = ?,
+                    message_count = message_count + 1
+                WHERE user_id = ?
+                """,
+                (now, user_id)
+            )
+            
+            self.conn.commit()
+            return True
+            
+        except Exception as e:
+            logger.error(f"添加私信记录失败: {str(e)}")
+            return False
+            
+    def get_today_message_count(self):
+        """获取今日私信数量"""
+        try:
+            cursor = self.conn.cursor()
+            today = datetime.now().date()
+            
+            cursor.execute(
+                "SELECT COUNT(*) FROM messages WHERE date(send_time) = date(?)",
+                (today,)
+            )
+            return cursor.fetchone()[0]
+            
+        except Exception as e:
+            logger.error(f"获取今日私信数量失败: {str(e)}")
+            return 0
+            
+    def get_fans_need_message(self, limit=50):
+        """
+        获取需要发送私信的粉丝
+        
+        返回：需要发送私信的粉丝列表，每个粉丝包含user_id、username和days_followed
+        """
+        try:
+            cursor = self.conn.cursor()
+            now = datetime.now()
+            
+            # 获取需要发送私信的粉丝
+            cursor.execute(
+                """
+                SELECT user_id, username, days_followed
+                FROM fans
+                WHERE days_followed < 3  -- 只处理关注不超过3天的粉丝
+                AND (
+                    last_message_time IS NULL  -- 从未发送过私信
+                    OR (
+                        date(last_message_time) < date(?)  -- 今天还没有发送过私信
+                        AND julianday(?) - julianday(last_message_time) >= 1  -- 距离上次私信至少1天
+                    )
+                )
+                ORDER BY first_seen_time ASC
+                LIMIT ?
+                """,
+                (now, now, limit)
+            )
+            
+            fans = cursor.fetchall()
+            return [{'user_id': f[0], 'username': f[1], 'days_followed': f[2]} for f in fans]
+            
+        except Exception as e:
+            logger.error(f"获取需要发送私信的粉丝失败: {str(e)}")
+            return []
+            
+    def update_fan_interaction(self, user_id, days_followed):
+        """更新粉丝互动状态"""
+        try:
+            cursor = self.conn.cursor()
+            now = datetime.now()
+            
+            # 更新粉丝状态
+            cursor.execute(
+                """
+                UPDATE fans 
+                SET days_followed = ?,
+                    is_valid_fan = CASE WHEN ? >= 3 THEN 1 ELSE 0 END
+                WHERE user_id = ?
+                """,
+                (days_followed, days_followed, user_id)
+            )
+            
+            self.conn.commit()
+            return True
+            
+        except Exception as e:
+            logger.error(f"更新粉丝互动状态失败: {str(e)}")
+            return False 

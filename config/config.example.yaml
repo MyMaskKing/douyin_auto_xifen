@@ -64,7 +64,7 @@ interaction:
     - "新人涨粉，互关必回"
     - "新人求关注，互关必回"
     - "新人报道，互关必回"
-  follow_message: "为了成为有效粉丝，需要进行三天聊天。"  # 关注后发送的私信内容
+  follow_message: "已关注，请回关。为了成为有效粉丝，需要进行三天聊天。"  # 关注后发送的私信内容
   like_probability: 0.8  # 点赞概率
   comment_probability: 0.3  # 评论概率
 

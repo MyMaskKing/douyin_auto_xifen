@@ -1,0 +1,59 @@
+# 基础配置
+base:
+  username: "your_username"  # 抖音账号用户名
+  password: "your_password"  # 抖音账号密码
+  
+# 浏览器配置
+browser:
+  executable_path: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"  # Chrome浏览器路径
+  user_data_dir: "D:\\AboutDev\\Workspace_AI\\douyin_auto_xifen\\chrome_data"   # Chrome用户数据目录
+  headless: false  # 是否使用无头模式
+  
+# 数据库配置
+database:
+  path: "data/douyin.db"  # SQLite数据库文件路径
+  
+# 操作配置
+operation:
+  # 视频评论配置
+  video_comment:
+    enabled: true  # 是否启用视频评论功能
+    max_videos_per_day: 50  # 每天最大处理视频数
+    max_comments_per_video: 3  # 每个视频最大评论数
+    comment_templates:  # 评论模板
+      - "不错的视频，支持一下！"
+      - "学到了，感谢分享~"
+      - "很棒的内容，继续加油！"
+  
+  # 粉丝关注配置
+  follow:
+    enabled: true  # 是否启用粉丝关注功能
+    max_follows_per_day: 100  # 每天最大关注数
+    unfollow_days: 7  # 取消关注的天数阈值
+    max_unfollows_per_day: 50  # 每天最大取消关注数
+    
+  # 私信配置
+  message:
+    enabled: true  # 是否启用私信功能
+    max_messages_per_day: 100  # 每日最大私信数量
+    batch_size: 50  # 每轮处理的粉丝数量
+    templates:  # 私信模板
+      day1:  # 第一天的消息模板
+        - "你好呀，很高兴认识你~"
+        - "Hi，我是{username}，谢谢你的关注！"
+        - "嗨，感谢关注，希望我们能成为好朋友~"
+      day2:  # 第二天的消息模板
+        - "最近在忙什么呢？"
+        - "今天过得怎么样呀？"
+        - "有什么有趣的事情想分享吗？"
+      day3:  # 第三天的消息模板
+        - "这几天聊得很开心，希望以后也能经常互动~"
+        - "感谢这几天的交流，你真的很有趣！"
+        - "和你聊天很愉快，期待更多的分享~"
+    
+# 日志配置
+logging:
+  level: "INFO"  # 日志级别：DEBUG, INFO, WARNING, ERROR
+  file: "logs/douyin.log"  # 日志文件路径
+  max_size: 10  # 单个日志文件最大大小（MB）
+  backup_count: 5  # 保留的日志文件数量 

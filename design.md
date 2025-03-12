@@ -1,253 +1,248 @@
-# 抖音自动涨粉工具设计文档
+# 抖音自动化运营系统设计文档
 
-## 项目概述
+## 1. 系统概述
+本系统是一个基于Python的抖音自动化运营工具，主要功能包括视频评论、粉丝关注、私信互动等。系统通过模拟真实用户操作，实现账号的自动化运营和粉丝维护。
 
-抖音自动涨粉工具是一个自动化工具，用于管理抖音账号的关注和粉丝关系，提高账号的粉丝数量和互动率。该工具可以自动检查关注列表，识别未回关的用户，并根据配置自动取关这些用户。
+## 2. 系统架构
+系统采用模块化设计，主要包含以下模块：
+- 浏览器控制模块（BrowserHelper）
+- 数据库管理模块（DB）
+- 任务运行模块（TaskRunner）
+- 视频评论模块（VideoCommentManager）
+- 粉丝关注模块（FollowFansManager）
+- 私信管理模块（MessageManager）
+- 配置管理模块（Config）
+- 日志管理模块（Logger）
 
-## 系统架构
+## 3. 功能模块说明
 
-系统由以下几个主要模块组成：
+### 3.1 浏览器控制模块（BrowserHelper）
+负责浏览器的启动、页面访问、元素定位等基础操作。
+- 启动Chrome浏览器
+- 管理浏览器会话
+- 提供页面操作方法
+- 处理浏览器异常
 
-1. **浏览器管理模块 (core/browser.py)**：负责浏览器的启动、关闭、状态检查和会话管理。
-2. **任务运行模块 (core/task_runner.py)**：负责调度和执行各种任务，如取关、关注粉丝等。
-3. **关注列表管理模块 (core/follow_manager.py)**：负责处理关注列表相关操作，如检查关注列表、标记未回关用户等。
-4. **粉丝列表管理模块 (core/fan_manager.py)**：负责处理粉丝列表相关操作，如检查粉丝列表、标记待回关用户等。
-5. **粉丝关注管理模块 (core/follow_fans_manager.py)**：负责处理视频评论用户的关注操作。
-6. **视频评论管理模块 (core/video_comment_manager.py)**：负责在视频下自动发表评论，提高账号曝光度和互动率。
-7. **数据库模块 (utils/db.py)**：负责数据的存储和检索，包括用户信息、关注记录等。
-8. **配置模块 (utils/config.py)**：负责读取和验证配置信息。
-9. **日志模块 (core/logger.py)**：负责记录系统运行日志。
+### 3.2 数据库管理模块（DB）
+使用SQLite数据库存储运营数据。主要表结构：
+- follows：关注记录表
+- follow_fans：待关注粉丝表
+- fans：粉丝记录表
+- messages：私信记录表
+- processed_videos：已处理视频表
+- interactions：互动记录表
 
-## 功能说明
+### 3.3 任务运行模块（TaskRunner）
+负责调度和执行各类任务：
+- 视频评论任务
+- 粉丝关注任务
+- 取消关注任务
+- 私信互动任务
 
-### 1. 检查关注列表
+### 3.4 视频评论模块（VideoCommentManager）
+管理视频评论相关功能：
+- 获取目标视频
+- 发表评论
+- 记录评论历史
+- 控制评论频率
 
-**功能**：检查当前账号的关注列表，找出未回关的用户，并标记为待取关。
+### 3.5 粉丝关注模块（FollowFansManager）
+处理粉丝关注相关操作：
+- 获取潜在粉丝
+- 执行关注操作
+- 管理关注记录
+- 执行取消关注
 
-**使用方法**：系统会自动执行该任务，无需手动操作。
+### 3.6 私信管理模块（MessageManager）
+负责粉丝私信互动：
+- 新粉丝三天私信互动
+- 私信模板管理
+- 私信发送控制
+- 互动记录管理
 
-**参数说明**：
-- `unfollow_days`：配置文件中设置的取关天数阈值。系统在查询待取关用户时，会筛选出关注时间超过该天数的未回关用户。当设置为0时，所有未回关用户都会被立即标记为待取关，不考虑关注时间。
+功能特点：
+1. 自动识别新粉丝
+2. 根据关注天数发送不同私信
+3. 控制私信频率和数量
+4. 记录私信历史
+5. 评估粉丝互动效果
 
-**返回值**：
-- 成功返回True，失败返回False。
+私信互动流程：
+1. 第一天：发送欢迎私信
+2. 第二天：发送互动私信
+3. 第三天：发送总结私信
+4. 根据互动情况标记有效粉丝
 
-### 2. 取关任务
+### 3.7 配置管理模块（Config）
+管理系统配置信息：
+- 账号信息
+- 浏览器配置
+- 数据库配置
+- 操作频率限制
+- 私信模板配置
+- 日志配置
 
-**功能**：取关已标记为待取关的用户。
+### 3.8 日志管理模块（Logger）
+记录系统运行日志：
+- 操作日志
+- 错误日志
+- 统计信息
+- 截图记录
 
-**使用方法**：系统会自动执行该任务，无需手动操作。
+## 4. 数据库设计
 
-**参数说明**：
-- `max_unfollow_per_day`：配置文件中设置的每日最大取关数量。
-
-**返回值**：
-- 成功返回True，失败返回False。
-
-### 3. 检查粉丝列表
-
-**功能**：检查当前账号的粉丝列表，找出带有"回关"按钮的用户，并标记为待回关。
-
-**使用方法**：系统会自动执行该任务，无需手动操作。
-
-**参数说明**：
-- `check_fans_interval`：配置文件中设置的检查粉丝列表的时间间隔（秒）。
-- `max_fans_per_check`：每次检查时处理的最大粉丝数量。
-
-**返回值**：
-- 成功返回True，失败返回False。
-- 返回的数据包括已处理的粉丝数量和新标记的待回关用户数量。
-
-### 4. 回关任务
-
-**功能**：对已标记为待回关的用户进行回关操作。
-
-**使用方法**：系统会自动执行该任务，无需手动操作。
-
-**参数说明**：
-- `max_follow_back_per_day`：配置文件中设置的每日最大回关数量。
-- `follow_back_interval`：两次回关操作之间的最小时间间隔（秒）。
-
-**返回值**：
-- 成功返回True，失败返回False。
-- 返回的数据包括成功回关的用户数量。
-
-### 5. 关注粉丝任务
-
-**功能**：进入到指定的抖音视频中，对评论里面所有的人进行关注。
-
-**使用方法**：系统会自动执行该任务，无需手动操作。
-
-**参数说明**：
-- `target_videos`：配置文件中设置的目标视频列表。
-- `max_follow_per_video`：每个视频最多关注的用户数量。
-- `follow_interval`：两次关注操作之间的最小时间间隔（秒）。
-
-**返回值**：
-- 成功返回True，失败返回False。
-- 返回的数据包括每个视频成功关注的用户数量。
-
-### 6. 视频评论功能
-
-**功能**：在指定视频下自动发表评论，提高账号曝光度和互动率。
-
-**使用方法**：系统会根据配置自动执行该任务，无需手动操作。
-
-**参数说明**：
-- `video_urls`：配置文件中设置的视频URL列表，系统会在这些视频下发表评论。
-- `comments`：配置文件中设置的评论内容列表，系统会随机选择其中一条作为评论内容。
-- `comment_interval`：配置文件中设置的评论间隔时间（秒），系统会在两次评论之间随机等待一段时间。
-
-**返回值说明**：
-- 返回一个布尔值，表示任务是否成功执行。
-
-### 7. 提取评论用户功能
-
-**功能**：从视频评论中提取用户，并将其添加到待关注粉丝表中。如果评论数大于1000，则抽取40%的数据。
-
-**使用方法**：系统会根据配置自动执行该任务，无需手动操作。
-
-**参数说明**：
-- `video_urls`：配置文件中设置的视频URL列表，系统会从这些视频的评论中提取用户。
-- `extract_commenters_enabled`：配置文件中设置的功能开关，控制是否启用提取评论用户功能。
-
-**返回值说明**：
-- 返回一个布尔值，表示任务是否成功执行。
-
-### 8. 处理待关注粉丝功能
-
-**功能**：批量处理待关注粉丝表中的数据，关注用户并发送私信。每次关注成功后，将数据从待关注粉丝表移到关注表中，并发送私信。
-
-**使用方法**：系统会根据配置自动执行该任务，无需手动操作。
-
-**参数说明**：
-- `follow_fans_batch_size`：配置文件中设置的每批次处理数量，默认为10。
-- `follow_message`：配置文件中设置的私信内容，默认为"为了成为有效粉丝，需要进行三天聊天。"
-- `process_follow_fans_enabled`：配置文件中设置的功能开关，控制是否启用处理待关注粉丝功能。
-
-**返回值说明**：
-- 返回一个布尔值，表示任务是否成功执行。
-
-### 9. 功能开关配置
-
-系统支持通过配置文件中的功能开关来控制各个功能的启用和禁用：
-
-```yaml
-features:
-  follow_fans: false      # 是否启用关注粉丝功能
-  check_follows: false    # 是否启用审查关注列表功能
-  unfollow_users: false   # 是否启用取关功能
-  check_fans: false       # 是否启用检查粉丝列表功能
-  follow_back: false      # 是否启用回关功能
-  follow_video_fans: true # 是否启用视频评论关注功能
-  comment_video: true     # 是否启用视频评论功能
-  extract_commenters: true # 是否启用提取评论用户功能
-  process_follow_fans: true # 是否启用处理待关注粉丝功能
+### 4.1 follows表
+```sql
+CREATE TABLE follows (
+    user_id TEXT PRIMARY KEY,
+    username TEXT,
+    follow_time TIMESTAMP,
+    unfollow_time TIMESTAMP,
+    is_following INTEGER DEFAULT 1,
+    should_unfollow INTEGER DEFAULT 0,
+    marked_for_unfollow_time TIMESTAMP
+)
 ```
 
-**使用方法**：修改配置文件中的功能开关值（true/false）来启用或禁用相应的功能。
+### 4.2 follow_fans表
+```sql
+CREATE TABLE follow_fans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT,
+    username TEXT,
+    from_type TEXT,
+    source_id TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    processed INTEGER DEFAULT 0,
+    UNIQUE(user_id)
+)
+```
 
-## 最近优化
+### 4.3 fans表
+```sql
+CREATE TABLE fans (
+    user_id TEXT PRIMARY KEY,
+    username TEXT,
+    first_seen_time TIMESTAMP,
+    last_seen_time TIMESTAMP,
+    follow_status TEXT,
+    is_processed INTEGER DEFAULT 0,
+    need_follow_back INTEGER DEFAULT 0,
+    follow_back_time TIMESTAMP,
+    days_followed INTEGER DEFAULT 0,
+    last_message_time TIMESTAMP,
+    message_count INTEGER DEFAULT 0,
+    is_valid_fan INTEGER DEFAULT 0
+)
+```
 
-### 2025-03-10 优化
+### 4.4 messages表
+```sql
+CREATE TABLE messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT,
+    message TEXT,
+    send_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES fans (user_id)
+)
+```
 
-1. **关注状态处理**：修改了关注状态处理逻辑，确保无法确定关注状态的用户不会被放入取关列表，只有明确标记为"已关注"的用户才会被标记为待取关。
+### 4.5 processed_videos表
+```sql
+CREATE TABLE processed_videos (
+    video_url TEXT PRIMARY KEY,
+    processed_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    success INTEGER DEFAULT 1
+)
+```
 
-2. **取关用户筛选优化**：修改了数据库查询逻辑，在查询待取关用户时根据`unfollow_days`参数进行筛选，只返回关注时间超过阈值的用户。当`unfollow_days`为0时，返回所有标记为待取关的用户，不考虑关注时间。
+### 4.6 interactions表
+```sql
+CREATE TABLE interactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT,
+    action_type TEXT,
+    action_time TIMESTAMP,
+    UNIQUE(user_id, action_type, action_time)
+)
+```
 
-3. **关闭弹窗优化**：优化了关闭弹窗的代码，直接使用JavaScript精确定位并点击关闭按钮，移除了无效的直接点击方法，提高了关闭弹窗的成功率。
+## 5. 配置说明
 
-4. **代码拆分**：将`task_runner.py`文件中的`run_check_follows_task`方法移到新的`follow_manager.py`文件中，创建了`FollowListManager`类，减少了单个文件的代码量，提高了代码的可维护性。
+### 5.1 基础配置
+```yaml
+base:
+  username: "your_username"  # 抖音账号用户名
+  password: "your_password"  # 抖音账号密码
+```
 
-5. **修复导入错误**：修复了`task_runner.py`中导入`FollowListManager`但在`follow_manager.py`中定义为`FollowManager`的不一致问题，确保了类名的一致性。
+### 5.2 浏览器配置
+```yaml
+browser:
+  executable_path: "chrome.exe路径"
+  user_data_dir: "用户数据目录"
+  headless: false
+```
 
-6. **完成代码拆分**：完成了代码拆分工作，从`task_runner.py`中移除了`run_check_follows_task`方法，并正确初始化了`FollowListManager`实例，确保代码能够正常运行。
+### 5.3 操作配置
+```yaml
+operation:
+  video_comment:
+    enabled: true
+    max_videos_per_day: 50
+    max_comments_per_video: 3
+  
+  follow:
+    enabled: true
+    max_follows_per_day: 100
+    unfollow_days: 7
+    max_unfollows_per_day: 50
+    
+  message:
+    enabled: true
+    max_messages_per_day: 100
+    batch_size: 50
+```
 
-7. **修复douyin_bot.py中的导入错误**：修复了`douyin_bot.py`中导入`FollowManager`的错误，改为导入`FollowListManager`，并正确传递`config`参数，确保整个系统能够正常运行。
+### 5.4 私信模板配置
+```yaml
+message:
+  templates:
+    day1:
+      - "你好呀，很高兴认识你~"
+      - "Hi，我是{username}，谢谢你的关注！"
+    day2:
+      - "最近在忙什么呢？"
+      - "今天过得怎么样呀？"
+    day3:
+      - "这几天聊得很开心，希望以后也能经常互动~"
+      - "感谢这几天的交流，你真的很有趣！"
+```
 
-8. **修复运行异常**：
-   - 修复了`task_runner.py`中方法调用不一致的问题，将`get_unfollow_count_today`改为`get_today_unfollow_count`
-   - 优化了`follow_manager.py`中关注按钮的选择器，增加了更多可能的选择器
-   - 改进了点击关注按钮的代码，添加了更详细的日志和更好的错误处理
-   - 添加了使用JavaScript点击关注按钮的备用方案，提高了打开关注列表弹窗的成功率
+## 6. 使用说明
 
-9. **根据备份文件修复关注用户检查功能**：
-   - 修改了访问个人主页的URL，从`/user`改为`/user/self`
-   - 优化了关注按钮的查找方式，先尝试直接使用data-e2e属性查找，再使用备用选择器
-   - 改进了弹窗查找逻辑，使用更精确的选择器并保存弹窗元素
-   - 优化了用户项选择器，使用更多的备用选择器提高查找成功率
-   - 增强了标签页标题中关注总数的提取逻辑
-   - 整体提高了关注用户检查功能的稳定性和成功率
+### 6.1 环境要求
+- Python 3.8+
+- Chrome浏览器
+- SQLite数据库
 
-### 2025-03-11 优化
+### 6.2 安装依赖
+```bash
+pip install -r requirements.txt
+```
 
-1. **实现粉丝列表检查功能**：在`fan_manager.py`中实现了检查粉丝列表的功能，可以自动识别带有"回关"按钮的用户，并标记为待回关。
+### 6.3 配置文件
+1. 复制config.yaml.example为config.yaml
+2. 修改账号信息和其他配置
 
-2. **实现回关任务功能**：在`fan_manager.py`中实现了回关任务功能，可以自动对已标记为待回关的用户进行回关操作。
+### 6.4 运行系统
+```bash
+python main.py
+```
 
-3. **创建粉丝关注管理模块**：创建了新的`follow_fans_manager.py`文件，实现了关注视频评论者和群组成员的功能。
-
-4. **代码重构**：
-   - 从`task_runner.py`中移除了`run_follow_fans_task`方法，移至`follow_fans_manager.py`中
-   - 更新了`douyin_bot.py`中的初始化代码，添加了对`FollowFansManager`的导入和初始化
-   - 优化了`fan_manager.py`的构造函数，添加了对数据库和配置对象的依赖
-
-5. **功能增强**：
-   - 在`follow_fans_manager.py`中实现了更完善的视频评论者关注功能，包括自动识别评论区、加载更多评论等
-   - 在`follow_fans_manager.py`中实现了群组成员关注功能，包括自动识别成员列表、处理成员信息等
-   - 在`fan_manager.py`中优化了粉丝项的识别逻辑，使用多种选择器提高识别成功率
-
-6. **错误处理增强**：
-   - 在所有新功能中添加了详细的错误处理和日志记录
-   - 添加了截图保存功能，方便调试和问题排查
-   - 优化了按钮点击逻辑，添加了JavaScript点击作为备用方案
-
-### 2025-03-12 优化
-
-1. **实现功能开关控制**：
-   - 在`task_runner.py`中修改了`run_tasks`方法，根据配置文件中的功能开关来控制任务执行
-   - 在`follow_fans_manager.py`中修改了`run_follow_fans_task`方法，根据配置文件中的功能开关来控制视频评论者和群组成员的关注
-   - 添加了详细的日志记录，显示各个功能的开关状态
-
-2. **功能开关配置说明**：
-   - 添加了功能开关配置的说明，包括各个开关的作用和使用方法
-   - 优化了配置文件的结构，使其更加清晰和易于理解
-
-3. **代码优化**：
-   - 优化了任务执行逻辑，避免执行已禁用的功能
-   - 添加了更详细的日志记录，方便调试和问题排查
-   - 提高了代码的可维护性和可扩展性
-
-### 2025-03-13 粉丝按钮功能优化
-- 移除了通过URL切换粉丝标签的方法，改为直接点击元素
-- 新增了粉丝数量获取功能，支持自动处理"万"和"亿"单位的转换
-- 优化了点击验证机制，改为通过检查粉丝列表元素来验证
-- 实现了多层次的点击策略：
-  1. 新版粉丝按钮直接点击（优先使用）
-  2. 传统选择器点击（备选方案）
-  3. JavaScript直接操作（最后尝试）
-
-### 技术细节
-- 新增支持 `data-e2e="user-info-fans"` 属性的元素定位
-- 新增 `.C1cxu0Vq` 类选择器用于获取粉丝数量
-- 实现了粉丝数量的自动单位转换（万、亿）
-- 优化了元素定位和点击的成功率
-- 改进了日志记录，添加了更详细的调试信息
-
-### 改进效果
-- 提高了粉丝按钮点击的成功率
-- 增加了粉丝数量的获取功能
-- 优化了代码结构，提高了可维护性
-- 改进了错误处理机制
-
-## 待优化项目
-- 继续监控新版界面的变化，及时更新选择器
-- 优化粉丝数量的解析逻辑，处理更多可能的格式
-- 考虑添加粉丝数量的缓存机制
-
-## 待优化项
-
-1. **错误处理**：进一步完善错误处理机制，提高系统的稳定性。
-2. **性能优化**：优化滚动加载和用户处理逻辑，提高处理效率。
-3. **用户界面**：考虑添加简单的用户界面，方便用户查看任务执行情况和统计数据。
-4. **多账号支持**：考虑添加多账号支持，允许同时管理多个抖音账号。 
+## 7. 注意事项
+1. 遵守抖音平台规则
+2. 合理控制操作频率
+3. 定期备份数据库
+4. 及时处理异常情况
+5. 监控系统运行状态 
