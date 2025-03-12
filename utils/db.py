@@ -127,28 +127,27 @@ class Database:
             logger.error(f"添加关注记录失败: {str(e)}")
             
     def remove_follow_record(self, user_id):
-        """更新用户为已取关状态"""
+        """删除用户的关注记录"""
         try:
             cursor = self.conn.cursor()
-            now = datetime.now()
             
-            # 更新用户状态为已取关
+            # 删除用户的关注记录
             cursor.execute(
-                "UPDATE follows SET is_following = 0, unfollow_time = ?, should_unfollow = 0 WHERE user_id = ?",
-                (now, user_id)
+                "DELETE FROM follows WHERE user_id = ?",
+                (user_id,)
             )
             self.conn.commit()
             
-            # 检查是否成功更新
+            # 检查是否成功删除
             if cursor.rowcount > 0:
-                logger.info(f"成功更新用户 {user_id} 为已取关状态")
+                logger.info(f"成功删除用户 {user_id} 的关注记录")
                 return True
             else:
-                logger.warning(f"未找到用户 {user_id} 的关注记录，无法更新为已取关状态")
+                logger.warning(f"未找到用户 {user_id} 的关注记录，无法删除")
                 return False
                 
         except Exception as e:
-            logger.error(f"更新用户为已取关状态失败: {str(e)}")
+            logger.error(f"删除用户关注记录失败: {str(e)}")
             return False
             
     def get_today_follow_count(self):

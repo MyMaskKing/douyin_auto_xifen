@@ -76,7 +76,7 @@ class VideoCommentManager:
             
             # 2. 点击评论按钮并发送评论
             comment_text = "新人涨粉，互关必回"
-            
+        
             # 查找评论输入框
             try:
                 # 等待评论输入框容器加载
@@ -166,70 +166,164 @@ class VideoCommentManager:
             # 3. 提取评论用户
             max_extract = self.config.get('operation', {}).get('max_follow_per_video', 20)  # 从配置中获取每个视频最多提取的评论数
             extracted_users = 0
-            max_scroll = 100  # 增加最大滚动次数以获取更多评论
             scroll_count = 0
             processed_users = set()  # 用于去重
+            no_new_data_count = 0  # 连续无新数据的次数
             
             # 获取配置中的最小提取用户数
             min_extract_users = self.config.get('operation', {}).get('min_extract_users_per_video', 5)
             
-            while extracted_users < max_extract and scroll_count < max_scroll:
-                # 获取当前页面上的评论用户
-                comment_elements = self.driver.find_elements(By.XPATH, "//div[contains(@class, 'comment-item')]")
+            while extracted_users < max_extract and no_new_data_count < 5:
+                # 记录当前评论数量
+                current_comments = len(self.driver.find_elements(By.XPATH, "//div[contains(@class, 'comment-item')]"))
                 
-                if not comment_elements:
-                    logger.warning("未找到评论元素")
-                    continue
-                
-                for comment_element in comment_elements:
+                # 滚动加载更多评论
+                logger.info(f"滚动加载更多评论 ({scroll_count+1})")
+                try:
+                    # 尝试多种滚动方式
+                    scroll_script = """
+                    function findScrollContainer() {
+                        // 方式1：通过route-scroll-container类查找
+                        let container1 = document.querySelector('.route-scroll-container');
+                        if (container1) return container1;
+                        
+                        // 方式2：通过IhmVuo1S类查找
+                        let container2 = document.querySelector('.IhmVuo1S');
+                        if (container2) return container2;
+                        
+                        // 方式3：通过comment-list查找
+                        let container3 = document.querySelector('[data-e2e="comment-list"]');
+                        if (container3) return container3;
+                        
+                        return null;
+                    }
+                    
+                    let scrollContainer = findScrollContainer();
+                    if (scrollContainer) {
+                        // 记录当前位置
+                        let oldScrollTop = scrollContainer.scrollTop;
+                        let oldScrollHeight = scrollContainer.scrollHeight;
+                        
+                        // 尝试滚动
+                        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+                        
+                        // 如果第一次滚动无效，尝试增加滚动距离
+                        if (oldScrollTop === scrollContainer.scrollTop) {
+                            scrollContainer.scrollTop += 500;  // 减小滚动距离，避免滚动过快
+                        }
+                        
+                        return {
+                            success: true,
+                            oldScrollTop: oldScrollTop,
+                            newScrollTop: scrollContainer.scrollTop,
+                            scrollHeight: scrollContainer.scrollHeight,
+                            element: 'scroll-container'
+                        };
+                    }
+                    
+                    // 如果找不到滚动容器，尝试滚动整个页面
+                    let oldScrollY = window.scrollY;
+                    window.scrollTo(0, document.body.scrollHeight);
+                    return {
+                        success: false,
+                        oldScrollTop: oldScrollY,
+                        newScrollTop: window.scrollY,
+                        scrollHeight: document.body.scrollHeight,
+                        element: 'body'
+                    };
+                    """
+                    scroll_result = self.driver.execute_script(scroll_script)
+                    
+                    # 记录滚动结果
+                    if scroll_result['success']:
+                        logger.info(f"使用评论列表容器滚动 - 从 {scroll_result['oldScrollTop']} 到 {scroll_result['newScrollTop']}")
+                        if scroll_result['oldScrollTop'] == scroll_result['newScrollTop']:
+                            logger.warning("滚动位置未改变，可能已到底部")
+                    else:
+                        logger.info(f"使用页面全局滚动 - 从 {scroll_result['oldScrollTop']} 到 {scroll_result['newScrollTop']}")
+                    
+                except Exception as e:
+                    logger.warning(f"滚动失败: {str(e)}")
+                    # 如果JavaScript执行失败，使用selenium的方式滚动
                     try:
-                        # 提取用户ID和用户名
-                        user_id = None
-                        username = None
-                        
-                        # 尝试获取用户链接和ID
-                        try:
-                            user_link = comment_element.find_element(By.XPATH, ".//a[contains(@href, '/user/')]")
-                            if user_link:
-                                user_href = user_link.get_attribute("href")
-                                user_id = user_href.split("/user/")[1].split("?")[0]
-                        except:
-                            continue
-                        
-                        # 尝试获取用户名
-                        try:
-                            username = user_link.text.strip()
-                        except:
-                            continue
-                        
-                        # 添加到follow_fans表
-                        if user_id and username and user_id not in processed_users:
-                            processed_users.add(user_id)  # 记录已处理的用户ID
-                            if self.db.add_follow_fan(user_id, username, "video_comment", video_url):
-                                extracted_users += 1
-                                logger.info(f"已提取评论用户 {extracted_users}/{max_extract}: {username} ({user_id})")
-                        
-                        # 如果已经提取足够数量的用户，则退出
-                        if extracted_users >= max_extract:
-                            break
-                    except Exception as e:
-                        logger.warning(f"提取评论用户失败: {str(e)}")
+                        # 找到最后一条评论并滚动到它
+                        comments = self.driver.find_elements(By.XPATH, "//div[contains(@class, 'comment-item')]")
+                        if comments:
+                            last_comment = comments[-1]
+                            self.driver.execute_script("arguments[0].scrollIntoView(true);", last_comment)
+                            logger.info("使用scrollIntoView滚动到最后一条评论")
+                    except:
+                        # 最后的备选方案：滚动整个页面
+                        self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                        logger.info("使用页面全局滚动（备选方案）")
+                
+                # 等待新评论加载
+                self.random_sleep(2, 3)
+                
+                # 检查是否有新评论加载
+                new_comments = len(self.driver.find_elements(By.XPATH, "//div[contains(@class, 'comment-item')]"))
+                
+                # 如果评论数量没有增加，增加无数据计数
+                if new_comments <= current_comments:
+                    no_new_data_count += 1
+                    logger.info(f"未检测到新评论，连续 {no_new_data_count}/5 次")
+                else:
+                    no_new_data_count = 0  # 有新数据，重置计数
+                    logger.info(f"检测到 {new_comments - current_comments} 条新评论")
+                    
+                    # 处理当前页面上的评论用户
+                    comment_elements = self.driver.find_elements(By.XPATH, "//div[contains(@class, 'comment-item')]")
+                    
+                    if not comment_elements:
+                        logger.warning("未找到评论元素")
                         continue
+                    
+                    # 只处理新加载的评论
+                    for comment_element in comment_elements[current_comments:]:
+                        try:
+                            # 提取用户ID和用户名
+                            user_id = None
+                            username = None
+                            
+                            # 尝试获取用户链接和ID
+                            try:
+                                user_link = comment_element.find_element(By.XPATH, ".//a[contains(@href, '/user/')]")
+                                if user_link:
+                                    user_href = user_link.get_attribute("href")
+                                    user_id = user_href.split("/user/")[1].split("?")[0]
+                            except:
+                                continue
+                            
+                            # 尝试获取用户名
+                            try:
+                                username = user_link.text.strip()
+                            except:
+                                continue
+                            
+                            # 添加到follow_fans表
+                            if user_id and username and user_id not in processed_users:
+                                processed_users.add(user_id)  # 记录已处理的用户ID
+                                if self.db.add_follow_fan(user_id, username, "video_comment", video_url):
+                                    extracted_users += 1
+                                    logger.info(f"已提取评论用户 {extracted_users}/{max_extract}: {username} ({user_id})")
+                            
+                            # 如果已经提取足够数量的用户，则退出
+                            if extracted_users >= max_extract:
+                                break
+                        except Exception as e:
+                            logger.warning(f"提取评论用户失败: {str(e)}")
+                            continue
+                
+                scroll_count += 1
                 
                 # 如果已经提取足够数量的用户，则退出
                 if extracted_users >= max_extract:
                     break
                 
-                # 滚动加载更多评论
-                logger.info(f"滚动加载更多评论 ({scroll_count+1}/{max_scroll})")
-                try:
-                    # 尝试滚动评论列表
-                    self.driver.execute_script("document.querySelector('.comment-list').scrollTop += 1000;")
-                except:
-                    # 如果失败，尝试滚动整个页面
-                    self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                self.random_sleep(2, 3)
-                scroll_count += 1
+                # 如果连续5次没有新数据，认为已到底
+                if no_new_data_count >= 5:
+                    logger.info("连续5次未检测到新评论，认为已到达底部")
+                    break
             
             logger.info(f"成功从视频 {video_url} 中提取 {extracted_users} 个评论用户")
             
