@@ -102,24 +102,14 @@ def main():
                     error_reason = task_result.get('reason', '未知错误')
                     logger.error(f"任务执行失败: {error_reason}")
                     
-                    # 等待用户输入决定是否继续
-                    user_input = input("任务执行遇到问题，是否继续执行？(y/n): ")
-                    if user_input.lower() != 'y':
-                        logger.info("用户选择终止任务")
-                        break
-                    else:
-                        logger.info("用户选择继续执行任务")
-                        continue
-                
-                # 根据任务结果决定休息时间
-                if task_result.get('task_type') == 'check_follows':
-                    # 如果是检查关注列表任务完成，等待配置的间隔时间
-                    interval = task_result.get('interval', 3600)
-                    logger.info(f"检查关注列表任务完成，休息 {interval} 秒后执行下一轮任务")
-                    time.sleep(interval)
+                # 等待用户输入决定是否继续
+                user_input = input("任务执行遇到问题，是否继续执行？(y/n): ")
+                if user_input.lower() != 'y':
+                    logger.info("用户选择终止任务")
+                    break
                 else:
-                    # 其他任务完成后的默认休息时间
-                    time.sleep(10)
+                    logger.info("用户选择继续执行任务")
+                
                 
             except Exception as e:
                 logger.error(f"运行任务时出错: {str(e)}")
