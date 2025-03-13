@@ -10,6 +10,7 @@ from selenium.webdriver.support import expected_conditions as EC
 import random
 import time
 from datetime import datetime
+from selenium.webdriver.common.action_chains import ActionChains
 from .logger import logger, save_screenshot
 
 class FollowFansManager:
@@ -147,23 +148,89 @@ class FollowFansManager:
             save_screenshot(self.driver, f"send_message_{user_id}", level="NORMAL")
             
             # 查找私信按钮
+            # 查找私信按钮
             message_button = None
             message_button_selectors = [
-                "//button[contains(@class, 'K8kpIsJm')]",
-                "//button[contains(@class, 'semi-button-secondary')][.//span[text()='私信']]",
-                "//button[contains(., '私信')]"
+                # 最精确的选择器，基于完整的类名组合
+                "//div[contains(@class, 'XB2sFwjg')]//button[contains(@class, 'semi-button-secondary') and contains(@class, 'K8kpIsJm')]//span[text()='私信']/parent::button",
+                
+                # 基于父div和类名组合的选择器
+                "//div[contains(@class, 'XB2sFwjg')]//button[contains(@class, 'K8kpIsJm')]//span[text()='私信']/parent::button",
+                
+                # 基于特定类名组合的选择器
+                "//button[contains(@class, 'semi-button-secondary') and contains(@class, 'K8kpIsJm')]//span[text()='私信']/parent::button",
+                
+                # 基于按钮内容和类名的选择器
+                "//button[contains(@class, 'K8kpIsJm')]//span[text()='私信']/parent::button",
+                
+                # 基于semi-button类和内容的选择器
+                "//button[contains(@class, 'semi-button-secondary')]//span[text()='私信']/parent::button",
+                
+                # 最宽松的选择器，仅基于按钮内容
+                "//button//span[text()='私信']/parent::button"
             ]
             
             for selector in message_button_selectors:
                 try:
-                    message_button = self.driver.find_element(By.XPATH, selector)
-                    logger.info(f"找到私信按钮: {selector}")
-                    break
-                except:
+                    elements = self.driver.find_elements(By.XPATH, selector)
+                    for element in elements:
+                        # 检查按钮是否可见且可点击
+                        if element.is_displayed() and element.is_enabled():
+                            message_button = element
+                            logger.info(f"找到可用的私信按钮: {selector}")
+                            break
+                    if message_button:
+                        break
+                except Exception as e:
                     continue
             
             if not message_button:
                 logger.warning(f"未找到私信按钮: {username} ({user_id})")
+                save_screenshot(self.driver, f"no_message_button_{user_id}")
+                return False
+            
+            # 点击私信按钮
+            logger.info(f"尝试点击私信按钮: {username} ({user_id})")
+            click_success = False
+            
+            # 尝试多种点击方法
+            click_methods = [
+                # 方法1: 直接点击
+                lambda: message_button.click(),
+                
+                # 方法2: 使用JavaScript点击
+                lambda: self.driver.execute_script("arguments[0].click();", message_button),
+                
+                # 方法3: 使用ActionChains点击
+                lambda: ActionChains(self.driver).move_to_element(message_button).click().perform(),
+                
+                # 方法4: 先移动到元素，等待后再点击
+                lambda: (ActionChains(self.driver).move_to_element(message_button).perform(), 
+                        time.sleep(1), 
+                        message_button.click()),
+                
+                # 方法5: 使用JavaScript滚动到元素后点击
+                lambda: (self.driver.execute_script("arguments[0].scrollIntoView(true);", message_button),
+                        time.sleep(1),
+                        message_button.click())
+            ]
+            
+            for i, click_method in enumerate(click_methods, 1):
+                try:
+                    click_method()
+                    self.random_sleep(2, 3)
+                    # 验证点击是否成功（检查私信对话框是否出现）
+                    if len(self.driver.find_elements(By.XPATH, "//div[contains(@class, 'im-richtext-container')]")) > 0:
+                        click_success = True
+                        logger.info(f"成功点击私信按钮（方法{i}）")
+                        break
+                except Exception as e:
+                    logger.warning(f"点击方法{i}失败: {str(e)}")
+                    continue
+            
+            if not click_success:
+                logger.error(f"所有点击方法都失败了: {username} ({user_id})")
+                save_screenshot(self.driver, f"click_message_button_failed_{user_id}")
                 return False
             
             # 点击私信按钮

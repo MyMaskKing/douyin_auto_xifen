@@ -290,28 +290,50 @@ class VideoCommentManager:
                                 user_link = comment_element.find_element(By.XPATH, ".//a[contains(@href, '/user/')]")
                                 if user_link:
                                     user_href = user_link.get_attribute("href")
-                                    user_id = user_href.split("/user/")[1].split("?")[0]
-                            except:
+                                    if user_href and "/user/" in user_href:
+                                        user_id = user_href.split("/user/")[1].split("?")[0]
+                                        if not user_id:
+                                            logger.warning("提取到的用户ID为空")
+                                            continue
+                                    else:
+                                        logger.warning("用户链接格式不正确")
+                                        continue
+                            except Exception as e:
+                                logger.warning(f"提取用户ID失败: {str(e)}")
                                 continue
                             
                             # 尝试获取用户名
                             try:
                                 username = user_link.text.strip()
-                            except:
-                                continue
+                                if not username:
+                                    username = "未知用户"
+                                    logger.info(f"用户 {user_id} 的用户名为空，设置为默认值：{username}")
+                            except Exception as e:
+                                username = "未知用户"
+                                logger.warning(f"提取用户名失败，使用默认值：{username}，错误：{str(e)}")
                             
-                            # 添加到follow_fans表
-                            if user_id and username and user_id not in processed_users:
+                            # 验证用户信息的有效性
+                            if user_id and user_id not in processed_users:
+                                # 首先检查用户是否已经在follow表中存在
+                                if self.db.is_followed(user_id):
+                                    logger.info(f"用户 {user_id} ({username}) 已在关注列表中，跳过")
+                                    processed_users.add(user_id)  # 记录为已处理
+                                    continue
+                                
                                 processed_users.add(user_id)  # 记录已处理的用户ID
+                                
+                                # 添加到follow_fans表
                                 if self.db.add_follow_fan(user_id, username, "video_comment", video_url):
                                     extracted_users += 1
                                     logger.info(f"已提取评论用户 {extracted_users}/{max_extract}: {username} ({user_id})")
+                                else:
+                                    logger.warning(f"添加用户到数据库失败: {username} ({user_id})")
                             
                             # 如果已经提取足够数量的用户，则退出
                             if extracted_users >= max_extract:
                                 break
                         except Exception as e:
-                            logger.warning(f"提取评论用户失败: {str(e)}")
+                            logger.warning(f"处理评论用户失败: {str(e)}")
                             continue
                 
                 scroll_count += 1
@@ -330,7 +352,7 @@ class VideoCommentManager:
             # 只有当提取到足够数量的用户时，才标记视频为已处理
             if extracted_users >= min_extract_users:
                 logger.info(f"已达到最小提取用户数 {min_extract_users}，标记视频为已处理")
-                self.db.mark_video_processed(video_url)
+                self.db.mark_video_processed(video_url, True)
                 return True
             else:
                 logger.warning(f"提取的用户数 {extracted_users} 小于最小要求 {min_extract_users}，视频将不会被标记为已处理")
