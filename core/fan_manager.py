@@ -51,7 +51,8 @@ class FanManager:
             # 首先尝试获取用户ID，这是最关键的信息
             user_id = None
             try:
-                link_element = fan_item.find_element(By.XPATH, ".//a[contains(@class, 'uz1VJwFY')]")
+                # 使用href属性定位用户链接
+                link_element = fan_item.find_element(By.XPATH, ".//div/div/a[@href]")
                 href = link_element.get_attribute('href')
                 if href and '/user/' in href:
                     user_id = href.split('/user/')[-1].split('?')[0]
@@ -65,42 +66,51 @@ class FanManager:
             
             # 尝试获取用户名，但即使获取失败也继续处理
             username = "未知用户"
-            username_selectors = [
-                ".//div[contains(@class, 'kUKK9Qal')]//span[contains(@class, 'arnSiSbK')]",
-                ".//div[contains(@class, 'X8ljGzft')]//div[contains(@class, 'kUKK9Qal')]//span[contains(@class, 'arnSiSbK')]"
-            ]
-            
-            for selector in username_selectors:
-                try:
-                    username_element = fan_item.find_element(By.XPATH, selector)
-                    temp_username = username_element.text.strip()
-                    if temp_username:
-                        username = temp_username
-                        break
-                except:
-                    continue
+            try:
+                # 使用正确的XPath路径获取用户名
+                username_element = link_element.find_element(By.XPATH, ".//span/span/span/span/span")
+                temp_username = username_element.text.strip()
+                if temp_username:
+                    username = temp_username
+                    logger.info(f"成功获取用户名: {username}")
+            except Exception as e:
+                logger.warning(f"无法获取用户名，使用默认值: {username}，错误: {str(e)}")
             
             # 检查关注状态和按钮
             ui_follow_status = None  # UI上显示的关注状态
             follow_button = None
             try:
-                button = fan_item.find_element(By.XPATH, ".//button[contains(@class, 'xjIRvxqr')]")
-                button_text = button.find_element(By.XPATH, ".//div[contains(@class, 'zPZJ3j40')]").text.strip()
+                # 使用层级关系获取按钮
+                buttons = fan_item.find_elements(By.XPATH, ".//button")
+                for button in buttons:
+                    try:
+                        button_text = button.find_element(By.XPATH, ".//div").text.strip()
+                        
+                        if "相互关注" in button_text:
+                            ui_follow_status = "mutual"
+                            status_text = "相互关注(mutual)"
+                            break
+                        elif "回关" in button_text:
+                            ui_follow_status = "need_follow_back"
+                            status_text = "待回关(need_follow_back)"
+                            follow_button = button
+                            break
+                        elif "已请求" in button_text:
+                            ui_follow_status = "requested"
+                            status_text = "已请求(requested)"
+                            break
+                    except:
+                        continue
                 
-                if "相互关注" in button_text:
-                    ui_follow_status = "mutual"
-                elif "回关" in button_text:
-                    ui_follow_status = "need_follow_back"
-                    follow_button = button
-                elif "已请求" in button_text:
-                    ui_follow_status = "requested"
-                else:
-                    ui_follow_status = "unknown"  # 未知状态
+                if not ui_follow_status:
+                    ui_follow_status = "unknown"
+                    status_text = "未知状态(unknown)"
                 
-                logger.info(f"用户 {username} ({user_id}) 的UI关注状态: {ui_follow_status}, 按钮文本: {button_text}")
+                logger.info(f"用户 {username} ({user_id}) 的关注状态: {status_text}")
             except:
                 logger.warning(f"无法获取用户 {username} ({user_id}) 的UI关注状态")
                 ui_follow_status = "unknown"
+                status_text = "未知状态(unknown)"
             
             # 检查数据库中是否已存在该粉丝
             existing_fan = self.db.get_user_by_id(user_id)
@@ -202,7 +212,8 @@ class FanManager:
                             break
                     
                     # 获取当前可见的粉丝项
-                    fan_items = container.find_elements(By.XPATH, ".//div[contains(@class, 'i5U4dMnB')]")
+                    # 使用data-e2e属性定位容器，然后获取其直接子元素中的粉丝项
+                    fan_items = container.find_elements(By.XPATH, "./div/div[.//a[contains(@href, '/user/')]]")
                     current_count = len(fan_items)
                     
                     if current_count > 0:
@@ -214,7 +225,8 @@ class FanManager:
                             # 先尝试获取用户ID
                             user_id = None
                             try:
-                                link_element = fan_item.find_element(By.XPATH, ".//a[contains(@class, 'uz1VJwFY')]")
+                                # 使用href属性定位用户链接
+                                link_element = fan_item.find_element(By.XPATH, ".//a[contains(@href, '/user/')]")
                                 href = link_element.get_attribute('href')
                                 if href and '/user/' in href:
                                     user_id = href.split('/user/')[-1].split('?')[0]
@@ -251,8 +263,19 @@ class FanManager:
                         else:
                             no_new_items_count = 0
                             
-                        self.driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", container)
-                        self.random_sleep(2, 3)
+                        # 使用平滑滚动，每次只滚动一部分
+                        scroll_step = 100  # 每次滚动100像素
+                        current_scroll = self.driver.execute_script("return arguments[0].scrollTop", container)
+                        target_scroll = current_height
+                        
+                        while current_scroll < target_scroll:
+                            current_scroll = min(current_scroll + scroll_step, target_scroll)
+                            self.driver.execute_script("arguments[0].scrollTop = arguments[1]", container, current_scroll)
+                            # 短暂等待，让内容加载
+                            time.sleep(0.5)
+                        
+                        # 滚动完成后，等待新内容加载
+                        self.random_sleep(3, 5)
                         last_height = current_height
                     except Exception as e:
                         logger.warning(f"滚动操作失败: {str(e)}")
@@ -286,11 +309,28 @@ class FanManager:
     def get_expected_total_fans(self):
         """获取预期的粉丝总数"""
         try:
-            total_element = self.driver.find_element(By.XPATH, "//div[@data-e2e='user-info-fans']//div[contains(@class, 'C1cxu0Vq')]")
-            total_text = total_element.text.strip()
-            expected_total = int(total_text.replace('万', '0000').replace('亿', '00000000'))
-            logger.info(f"预期粉丝总数: {expected_total}")
-            return expected_total
+            # 使用固定的data-e2e属性选择器
+            fans_button = self.driver.find_element(By.XPATH, "//div[@data-e2e='user-info-fans']")
+            # 获取第二个div中的数字
+            fans_count_element = fans_button.find_element(By.XPATH, './/div[2]')
+            fans_text = fans_count_element.text.strip()
+            logger.info(f"粉丝数量文本内容: {fans_text}")
+            
+            # 使用正则表达式提取数字
+            numbers = re.findall(r'\d+', fans_text)
+            if numbers:
+                expected_total = int(numbers[0])
+                # 处理单位（万、亿）
+                if '万' in fans_text:
+                    expected_total *= 10000
+                elif '亿' in fans_text:
+                    expected_total *= 100000000
+                logger.info(f"预期粉丝总数: {expected_total}")
+                return expected_total
+            else:
+                logger.warning(f"未在文本中找到数字: {fans_text}")
+                return None
+                
         except Exception as e:
             logger.warning(f"获取预期粉丝总数失败: {str(e)}")
             return None
@@ -623,7 +663,8 @@ class FanManager:
             if today_messages >= max_messages_per_day:
                 logger.info(f"今日私信数量 ({today_messages}) 已达上限 ({max_messages_per_day})")
                 return True
-            
+            else:
+                logger.info(f"今日已经对 ({today_messages}) 个粉丝发送私信")
             # 获取需要互动的粉丝
             remaining_messages = max_messages_per_day - today_messages
             fans_need_message = self.db.get_fans_need_message(limit=remaining_messages)

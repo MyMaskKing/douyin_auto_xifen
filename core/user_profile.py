@@ -126,10 +126,24 @@ class UserProfileManager:
                 
                 # 获取粉丝数量
                 try:
-                    fans_count_element = fans_button.find_element(By.XPATH, './/div[contains(@class, "C1cxu0Vq")]')
-                    fans_count_text = fans_count_element.text
-                    fans_count = int(fans_count_text.replace('万', '0000').replace('亿', '00000000'))
-                    logger.info(f"获取到粉丝数量: {fans_count}")
+                    # 使用固定的data-e2e属性选择器，获取第二个div的文本
+                    fans_count_element = fans_button.find_element(By.XPATH, './/div[2]')
+                    fans_text = fans_count_element.text
+                    logger.info(f"粉丝数量文本内容: {fans_text}")
+                    
+                    # 使用正则表达式提取数字
+                    numbers = re.findall(r'\d+', fans_text)
+                    if numbers:
+                        fans_count = int(numbers[0])
+                        # 处理单位（万、亿）
+                        if '万' in fans_text:
+                            fans_count *= 10000
+                        elif '亿' in fans_text:
+                            fans_count *= 100000000
+                        logger.info(f"获取到粉丝数量: {fans_count}")
+                    else:
+                        logger.warning(f"未在文本中找到数字: {fans_text}")
+                        fans_count = 0
                 except Exception as e:
                     logger.warning(f"获取粉丝数量失败: {str(e)}")
                     fans_count = 0

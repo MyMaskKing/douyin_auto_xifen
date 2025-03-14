@@ -67,9 +67,19 @@ class Database:
                     user_id TEXT,
                     message TEXT,
                     send_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    status TEXT DEFAULT 'success',
                     FOREIGN KEY (user_id) REFERENCES fans (user_id)
                 )
             ''')
+            
+            # 检查messages表中status列是否存在，如果不存在则添加
+            cursor.execute("PRAGMA table_info(messages)")
+            columns = cursor.fetchall()
+            column_names = [column[1] for column in columns]
+            
+            if 'status' not in column_names:
+                logger.info("添加status列到messages表")
+                cursor.execute("ALTER TABLE messages ADD COLUMN status TEXT DEFAULT 'success'")
             
             # 检查unfollow_time列是否存在，如果不存在则添加
             cursor.execute("PRAGMA table_info(follows)")
@@ -881,16 +891,26 @@ class Database:
             logger.error(f"添加粉丝记录失败: {str(e)}")
             return False
             
-    def add_message_record(self, user_id, message):
-        """添加私信记录"""
+    def add_message_record(self, user_id, message, status='success'):
+        """
+        添加私信记录
+        
+        参数:
+            user_id: 用户ID
+            message: 私信内容
+            status: 私信状态，默认为'success'，可选值：'success', 'failed'
+        
+        返回:
+            bool: 操作是否成功
+        """
         try:
             now = datetime.now()
             cursor = self.conn.cursor()
             
             # 添加私信记录
             cursor.execute(
-                "INSERT INTO messages (user_id, message, send_time) VALUES (?, ?, ?)",
-                (user_id, message, now)
+                "INSERT INTO messages (user_id, message, send_time, status) VALUES (?, ?, ?, ?)",
+                (user_id, message, now, status)
             )
             
             # 更新粉丝表中的私信相关字段
@@ -1017,4 +1037,49 @@ class Database:
             
         except Exception as e:
             logger.error(f"更新粉丝互动状态失败: {str(e)}")
+            return False
+            
+    def mark_user_message_failed(self, user_id, next_message_day):
+        """
+        标记用户私信失败，将今天的发信次数延后一天
+        
+        参数:
+            user_id: 用户ID
+            next_message_day: 下一次发送私信的天数（1, 2, 3）
+        
+        返回:
+            bool: 操作是否成功
+        """
+        try:
+            cursor = self.conn.cursor()
+            now = datetime.now()
+            tomorrow = now + timedelta(days=1)
+            
+            # 更新粉丝状态，设置下一次消息时间为明天
+            cursor.execute(
+                """
+                UPDATE fans 
+                SET first_seen_time = date(first_seen_time,'+1 day'),
+                    last_message_time = ?,
+                    days_followed = ?
+                WHERE user_id = ?
+                """,
+                (tomorrow, next_message_day - 1, user_id)
+            )
+            
+            # 添加一条消息失败记录
+            cursor.execute(
+                """
+                INSERT INTO messages (user_id, message, send_time, status)
+                VALUES (?, ?, ?, ?)
+                """,
+                (user_id, "消息发送失败，已延后一天", now, "failed")
+            )
+            
+            self.conn.commit()
+            logger.info(f"已标记用户 {user_id} 私信失败，将发信进度延后一天")
+            return True
+            
+        except Exception as e:
+            logger.error(f"标记用户私信失败状态失败: {str(e)}")
             return False 
