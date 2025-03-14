@@ -210,7 +210,7 @@ class Database:
             # 查询超过指定天数的关注记录，且未被标记为待取关的用户
             cursor.execute("""
                 SELECT user_id, username FROM follows 
-                WHERE follow_time < ? 
+                WHERE date(follow_time) < date(?) 
                 AND is_following = 1
                 AND (should_unfollow = 0 OR should_unfollow IS NULL)
                 ORDER BY follow_time ASC
@@ -254,13 +254,13 @@ class Database:
                 )
             else:
                 # 计算关注时间阈值
-                threshold_date = (now - timedelta(days=unfollow_days)).isoformat()
+                threshold_date = (now - timedelta(days=unfollow_days))
                 
                 # 返回关注时间超过阈值且标记为待取关的用户
                 cursor.execute(
                     """
                     SELECT user_id, username FROM follows 
-                    WHERE is_following = 1 AND should_unfollow = 1 AND follow_time <= ?
+                    WHERE is_following = 1 AND should_unfollow = 1 AND date(follow_time) <= date(?)
                     ORDER BY marked_for_unfollow_time ASC
                     LIMIT ?
                     """,
@@ -708,7 +708,7 @@ class Database:
             else:
                 # 清除指定天数前的评论
                 cutoff_date = datetime.now() - timedelta(days=days)
-                cursor.execute("DELETE FROM comments WHERE comment_time < ?", (cutoff_date,))
+                cursor.execute("DELETE FROM comments WHERE date(comment_time) < date(?)", (cutoff_date,))
                 logger.info(f"已清除 {days} 天前的评论记录")
             
             self.conn.commit()
@@ -941,14 +941,14 @@ class Database:
             cursor.execute(
                 """
                 SELECT f.user_id, f.username, 
-                       CAST((julianday(?) - julianday(f.first_seen_time)) AS INTEGER) as days_since_follow
+                       CAST((julianday(date(?)) - julianday(date(f.first_seen_time))) AS INTEGER) as days_since_follow
                 FROM fans f
-                WHERE julianday(?) - julianday(f.first_seen_time) <= 2  -- 处理前三天的粉丝（0,1,2分别代表第一、二、三天）
+                WHERE julianday(date(?)) - julianday(date(f.first_seen_time)) <= 2  -- 处理前三天的粉丝（0,1,2分别代表第一、二、三天）
                 AND (
                     f.last_message_time IS NULL  -- 从未发送过私信
                     OR (
                         date(f.last_message_time) < date(?)  -- 今天还没有发送过私信
-                        AND julianday(?) - julianday(f.last_message_time) >= 1  -- 距离上次私信至少1天
+                        AND julianday(date(?)) - julianday(date(f.last_message_time)) >= 1  -- 距离上次私信至少1天
                     )
                 )
                 ORDER BY f.first_seen_time ASC
@@ -991,8 +991,15 @@ class Database:
                 logger.error(f"未找到用户 {user_id} 的记录")
                 return False
                 
-            first_seen_time = datetime.strptime(result[0], '%Y-%m-%d %H:%M:%S.%f')
-            days_since_follow = (now - first_seen_time).days
+            # 计算天数差
+            cursor.execute(
+                """
+                SELECT CAST(julianday(date(?)) - julianday(date(first_seen_time)) AS INTEGER)
+                FROM fans WHERE user_id = ?
+                """,
+                (now, user_id)
+            )
+            days_since_follow = cursor.fetchone()[0]
             
             # 更新粉丝状态
             cursor.execute(

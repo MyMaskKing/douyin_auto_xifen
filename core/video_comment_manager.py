@@ -164,14 +164,14 @@ class VideoCommentManager:
                         return False
             
             # 3. 提取评论用户
-            max_extract = self.config.get('operation', {}).get('max_follow_per_video', 20)  # 从配置中获取每个视频最多提取的评论数
+            max_extract = self.config.get('operation', {}).get('video_tasks', {}).get('max_follow_per_video', 20)  # 从配置中获取每个视频最多提取的评论数
             extracted_users = 0
             scroll_count = 0
             processed_users = set()  # 用于去重
             no_new_data_count = 0  # 连续无新数据的次数
             
             # 获取配置中的最小提取用户数
-            min_extract_users = self.config.get('operation', {}).get('min_extract_users_per_video', 5)
+            min_extract_users = self.config.get('operation', {}).get('video_tasks', {}).get('min_extract_users_per_video', 5)
             
             while extracted_users < max_extract and no_new_data_count < 5:
                 # 记录当前评论数量

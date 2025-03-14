@@ -379,12 +379,12 @@ class FollowFansManager:
                 return True
             
             # 获取配置参数
-            batch_size = self.config.get('operation', {}).get('follow_fans_batch_size', 10)
-            max_follow_per_day = self.config.get('operation', {}).get('daily_follow_limit', 150)
+            batch_size = self.config.get('operation', {}).get('video_tasks', {}).get('follow_fans_batch_size', 10)
+            max_follow_per_day = self.config.get('operation', {}).get('video_tasks', {}).get('daily_follow_limit', 150)
             message = self.config.get('interaction', {}).get('follow_message', "为了成为有效粉丝，需要进行三天聊天。")
             
             # 获取等待时间配置
-            operation_config = self.config.get('operation', {})
+            operation_config = self.config.get('operation', {}).get('video_tasks', {})
             batch_rest_interval = operation_config.get('batch_rest_interval', [30, 60])  # 批量处理后的休息时间，默认30-60秒
             user_interval = operation_config.get('user_interval', [3, 10])  # 单个用户处理后的等待时间，默认3-10秒
             batch_size_before_rest = operation_config.get('batch_size_before_rest', 20)  # 多少个用户后休息，默认20个

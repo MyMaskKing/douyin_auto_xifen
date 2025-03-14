@@ -11,7 +11,7 @@ from .follow_manager import FollowListManager
 from .follow_fans_manager import FollowFansManager
 from .video_comment_manager import VideoCommentManager
 from .task_runner import TaskRunner
-from .logger import logger
+from .logger import logger, set_config, cleanup_logs
 from utils.config import load_config
 from utils.db import Database
 
@@ -45,6 +45,12 @@ class DouyinBot:
             成功返回True，失败抛出异常
         """
         try:
+            # 设置日志配置
+            set_config(self.config)
+            
+            # 清理过期日志
+            cleanup_logs()
+            
             # 初始化浏览器管理器
             self.browser_manager = BrowserManager(self.config, self.db)
             self.driver, self.wait = self.browser_manager.start()

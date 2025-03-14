@@ -12,6 +12,7 @@ from .logger import logger, save_screenshot, save_html, get_log_path
 import json
 import re
 from .message_manager import MessageManager
+import random
 
 class FanManager:
     """粉丝管理类，负责获取和处理粉丝列表"""
@@ -406,21 +407,14 @@ class FanManager:
         """
         执行回关任务
         
-        功能：对已标记为待回关的用户进行回关操作。
-        
-        参数说明：
-        - max_follow_back_per_day：配置文件中设置的每日最大回关数量。
-        - follow_back_interval：两次回关操作之间的最小时间间隔（秒）。
-        
-        返回：
-        - 成功返回True，失败返回False。
-        - 返回的数据包括成功回关的用户数量。
+        返回:
+            成功返回True，失败返回False
         """
         try:
             logger.info("开始执行回关任务...")
             
             # 获取今日可回关数量
-            max_follow_back_per_day = self.config.get('operation', {}).get('max_follow_back_per_day', 200)
+            max_follow_back_per_day = self.config.get('operation', {}).get('fan_list_tasks', {}).get('max_follow_back_per_day', 200)
             today_follow_backs = self.db.get_today_follow_back_count()
             
             if today_follow_backs >= max_follow_back_per_day:
@@ -431,31 +425,57 @@ class FanManager:
             users_to_follow_back = self.db.get_users_to_follow_back(max_follow_back_per_day - today_follow_backs)
             
             if not users_to_follow_back:
-                logger.info("没有待回关的用户")
+                logger.info("没有需要回关的用户")
                 return True
+                
+            logger.info(f"找到 {len(users_to_follow_back)} 个需要回关的用户")
             
-            logger.info(f"开始处理 {len(users_to_follow_back)} 个待回关用户")
+            # 获取关注间隔时间
+            follow_interval = self.config.get('operation', {}).get('fan_list_tasks', {}).get('follow_interval', [30, 60])
+            min_interval, max_interval = follow_interval
+            
             success_count = 0
             
             for user in users_to_follow_back:
-                if self.follow_back_user(user):
-                    success_count += 1
-                self.random_sleep(3, 5)
+                try:
+                    user_id = user['user_id']
+                    username = user['username']
+                    
+                    logger.info(f"准备回关用户: {username} ({user_id})")
+                    
+                    # 访问用户主页
+                    if not self.user_profile_manager.visit_user_profile(user_id):
+                        logger.error(f"访问用户主页失败: {username} ({user_id})")
+                        continue
+                    
+                    # 执行关注操作
+                    if self.follow_user(user_id, username):
+                        success_count += 1
+                        # 更新数据库
+                        self.db.update_fan_follow_back(user_id)
+                        logger.info(f"成功回关用户: {username} ({user_id})")
+                    else:
+                        logger.error(f"回关用户失败: {username} ({user_id})")
+                    
+                    # 随机等待一段时间
+                    wait_time = random.uniform(min_interval, max_interval)
+                    logger.info(f"等待 {wait_time:.2f} 秒后处理下一个用户")
+                    time.sleep(wait_time)
+                    
+                except Exception as e:
+                    logger.error(f"处理回关用户时出错: {str(e)}")
+                    continue
             
-            logger.info(f"回关任务完成，成功回关 {success_count} 个用户")
+            logger.info(f"回关任务完成，成功回关 {success_count}/{len(users_to_follow_back)} 个用户")
             return True
             
         except Exception as e:
-            logger.error(f"回关任务失败: {str(e)}")
-            save_screenshot(self.driver, "follow_back_error")
+            logger.error(f"执行回关任务失败: {str(e)}")
             return False
 
-    def follow_back_user(self, user):
+    def follow_user(self, user_id, username):
         """对单个用户执行回关操作"""
         try:
-            user_id = user['user_id']
-            username = user['username']
-            
             # 访问用户主页
             logger.info(f"访问用户 {username} ({user_id}) 的主页")
             self.driver.get(f"https://www.douyin.com/user/{user_id}")
@@ -545,9 +565,9 @@ class FanManager:
         try:
             logger.info(f"开始与新粉丝 {username} ({user_id}) 的互动流程")
             
-            # 检查今日私信配额
-            if self.db.get_today_message_count() >= self.config.get('operation', {}).get('max_messages_per_day', 100):
-                logger.info("今日私信数量已达上限，暂停私信互动")
+            # 检查今日私信数量是否已达上限
+            if self.db.get_today_message_count() >= self.config.get('operation', {}).get('fan_list_tasks', {}).get('max_messages_per_day', 100):
+                logger.info("今日私信数量已达上限，跳过私信任务")
                 return False
             
             # 发送第一天的欢迎消息
@@ -565,9 +585,9 @@ class FanManager:
     def send_welcome_message(self, user_id, username):
         """发送欢迎消息给新粉丝"""
         try:
-            # 检查今日私信配额
-            if self.db.get_today_message_count() >= self.config.get('operation', {}).get('max_messages_per_day', 100):
-                logger.info("今日私信数量已达上限，暂停私信互动")
+            # 检查今日私信数量是否已达上限
+            if self.db.get_today_message_count() >= self.config.get('operation', {}).get('fan_list_tasks', {}).get('max_messages_per_day', 100):
+                logger.info("今日私信数量已达上限，跳过私信任务")
                 return False
             
             # 发送第一天的私信（days_since_follow = 0）
@@ -596,8 +616,8 @@ class FanManager:
         try:
             logger.info("开始执行粉丝互动任务...")
             
-            # 获取今日可发送消息数量
-            max_messages_per_day = self.config.get('operation', {}).get('max_messages_per_day', 100)
+            # 获取今日可发送私信数量
+            max_messages_per_day = self.config.get('operation', {}).get('fan_list_tasks', {}).get('max_messages_per_day', 100)
             today_messages = self.db.get_today_message_count()
             
             if today_messages >= max_messages_per_day:

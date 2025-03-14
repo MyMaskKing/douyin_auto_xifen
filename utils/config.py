@@ -25,19 +25,48 @@ def validate_config(config):
     for section in required_sections:
         if section not in config:
             raise ValueError(f"配置文件缺少必要的{section}配置段")
-            
+    
+    # 验证功能开关配置
+    features = config.get('features', {})
+    
+    # 验证三大类任务的功能开关
+    task_categories = ['video_tasks', 'follow_list_tasks', 'fan_list_tasks']
+    for category in task_categories:
+        if category not in features:
+            features[category] = {'enabled': False}
+        elif not isinstance(features[category], dict):
+            features[category] = {'enabled': bool(features[category])}
+        elif 'enabled' not in features[category]:
+            features[category]['enabled'] = True
+    
     # 验证视频评论功能配置
-    if config.get('features', {}).get('comment_video', False) or config.get('features', {}).get('follow_video_fans', False):
+    if (features.get('video_tasks', {}).get('enabled', False) and 
+        (features.get('video_tasks', {}).get('get_video_reviewers', False) or 
+         features.get('video_tasks', {}).get('follow_video_fans', False))):
         if 'target_videos' not in config:
             raise ValueError("启用了视频评论或视频评论关注功能但未配置target_videos")
         if not config['target_videos']:
             raise ValueError("启用了视频评论或视频评论关注功能但未配置任何目标视频")
-        
+    
     # 验证操作配置
-    operation = config['operation']
-    if not isinstance(operation['daily_follow_limit'], int) or operation['daily_follow_limit'] <= 0:
+    operation = config.get('operation', {})
+    
+    # 确保三大类任务的操作配置存在
+    for category in task_categories:
+        if category not in operation:
+            operation[category] = {}
+    
+    # 确保通用操作配置存在
+    if 'common' not in operation:
+        operation['common'] = {}
+    
+    # 验证视频任务操作配置
+    video_tasks_op = operation.get('video_tasks', {})
+    if 'daily_follow_limit' not in video_tasks_op:
+        video_tasks_op['daily_follow_limit'] = 200
+    elif not isinstance(video_tasks_op['daily_follow_limit'], int) or video_tasks_op['daily_follow_limit'] <= 0:
         raise ValueError("daily_follow_limit必须是正整数")
-        
+    
     # 验证工作时间配置
     if 'working_hours' in config:
         if isinstance(config['working_hours'], dict):
@@ -63,39 +92,38 @@ def validate_config(config):
     # 检查测试模式
     if config.get('test_mode', False):
         logger.info("已配置测试模式，将忽略工作时间限制")
-        
-    # 验证功能开关配置
-    if 'features' not in config:
-        config['features'] = {}
-    features = config['features']
     
-    # 设置默认值
-    default_features = {
-        'follow_fans': False,
-        'check_follows': False,
-        'unfollow_users': False,
-        'check_fans': False,
-        'follow_back': False,
-        'follow_video_fans': False,
-        'comment_video': False,
-        'extract_commenters': False,
-        'process_follow_fans': False
-    }
-    
-    for feature, default_value in default_features.items():
-        if feature not in features:
-            features[feature] = default_value
-            
-    # 验证操作配置的默认值
+    # 设置默认操作配置
     default_operation = {
-        'daily_follow_limit': 150,
-        'daily_unfollow_limit': 100,
-        'follow_interval': 30,
-        'unfollow_interval': [5, 15],
-        'max_follow_per_video': 20,
-        'max_comment_per_day': 10
+        'video_tasks': {
+            'follow_fans_batch_size': 100,
+            'max_follow_per_video': 1000,
+            'batch_rest_interval': [180, 300],
+            'user_interval': [60, 180],
+            'batch_size_before_rest': 20,
+            'daily_follow_limit': 200
+        },
+        'follow_list_tasks': {
+            'daily_unfollow_limit': 100,
+            'unfollow_interval': [5, 15],
+            'unfollow_days': 3,
+            'unfollow_batch_size': 10,
+            'min_unfollow_success_rate': 0.7
+        },
+        'fan_list_tasks': {
+            'follow_interval': [30, 60],
+            'max_messages_per_day': 100
+        },
+        'common': {
+            'task_interval': 3600
+        }
     }
     
-    for key, default_value in default_operation.items():
-        if key not in operation:
-            operation[key] = default_value 
+    # 合并默认配置
+    for category, defaults in default_operation.items():
+        if category not in operation:
+            operation[category] = {}
+        
+        for key, value in defaults.items():
+            if key not in operation[category]:
+                operation[category][key] = value 

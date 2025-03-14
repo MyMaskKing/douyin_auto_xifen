@@ -9,6 +9,7 @@ import sys
 import os
 import time
 from datetime import datetime
+import shutil
 
 # 配置日志记录器，避免将HTML内容写入app_logs
 logger.remove()  # 移除默认处理器
@@ -24,6 +25,47 @@ logger.add(
     filter=lambda record: "html" not in record["extra"]
 )
 
+# 全局配置对象
+_config = None
+
+def set_config(config):
+    """设置全局配置对象"""
+    global _config
+    _config = config
+    
+    # 更新截图级别
+    global SCREENSHOT_LEVEL
+    if _config and 'logging' in _config:
+        level = _config['logging'].get('screenshot_level', 'NORMAL')
+        if level == 'ERROR':
+            SCREENSHOT_LEVEL = {
+                'ERROR': True,
+                'CRITICAL': False,
+                'NORMAL': False,
+                'DEBUG': False
+            }
+        elif level == 'CRITICAL':
+            SCREENSHOT_LEVEL = {
+                'ERROR': True,
+                'CRITICAL': True,
+                'NORMAL': False,
+                'DEBUG': False
+            }
+        elif level == 'NORMAL':
+            SCREENSHOT_LEVEL = {
+                'ERROR': True,
+                'CRITICAL': True,
+                'NORMAL': True,
+                'DEBUG': False
+            }
+        elif level == 'DEBUG':
+            SCREENSHOT_LEVEL = {
+                'ERROR': True,
+                'CRITICAL': True,
+                'NORMAL': True,
+                'DEBUG': True
+            }
+
 # 截图控制变量
 SCREENSHOT_LEVEL = {
     'ERROR': True,      # 错误时始终截图
@@ -31,6 +73,48 @@ SCREENSHOT_LEVEL = {
     'NORMAL': False,    # 普通操作默认不截图
     'DEBUG': False      # 调试操作默认不截图
 }
+
+def cleanup_logs():
+    """清理过期的日志文件"""
+    if not _config or 'logging' not in _config:
+        return
+        
+    max_log_files = _config['logging'].get('max_log_files', 10)
+    max_screenshot_files = _config['logging'].get('max_screenshot_files', 50)
+    
+    # 清理日志文件
+    try:
+        log_dirs = [d for d in os.listdir('logs') if os.path.isdir(os.path.join('logs', d))]
+        log_dirs.sort(reverse=True)  # 按日期倒序排列
+        
+        # 保留最近的max_log_files个日志目录
+        if len(log_dirs) > max_log_files:
+            for old_dir in log_dirs[max_log_files:]:
+                old_path = os.path.join('logs', old_dir)
+                logger.info(f"清理过期日志目录: {old_path}")
+                shutil.rmtree(old_path, ignore_errors=True)
+    except Exception as e:
+        logger.error(f"清理日志文件失败: {str(e)}")
+    
+    # 清理截图文件
+    try:
+        screenshot_files = []
+        for root, _, files in os.walk(os.path.join('logs')):
+            for file in files:
+                if file.endswith('.png'):
+                    full_path = os.path.join(root, file)
+                    screenshot_files.append((os.path.getmtime(full_path), full_path))
+        
+        # 按修改时间排序
+        screenshot_files.sort(reverse=True)
+        
+        # 删除超过限制的旧截图
+        if len(screenshot_files) > max_screenshot_files:
+            for _, file_path in screenshot_files[max_screenshot_files:]:
+                logger.info(f"清理过期截图: {file_path}")
+                os.remove(file_path)
+    except Exception as e:
+        logger.error(f"清理截图文件失败: {str(e)}")
 
 def get_log_path(log_type, operation=None, user_id=None):
     """

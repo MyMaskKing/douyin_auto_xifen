@@ -126,22 +126,26 @@ class BrowserManager:
         """
         检查当前是否在工作时间范围内
         
-        如果配置了全天运行（working_hours为空列表或包含[0, 24]），则始终返回True
-        否则检查当前时间是否在任一工作时间范围内
+        如果配置了全天运行模式或测试模式，则始终返回True
+        否则检查当前时间是否在工作时间范围内
         """
-        # 检查是否配置了全天运行
-        if not self.config['working_hours'] or [0, 24] in self.config['working_hours']:
-            logger.info("已配置全天运行模式")
+        # 检查是否配置了全天运行模式或测试模式
+        if self.config.get('all_day_operation', False) or self.config.get('test_mode', False):
+            logger.info("已配置全天运行模式或测试模式，忽略工作时间限制")
             return True
             
+        # 获取工作时间配置
+        working_hours = self.config.get('working_hours', {'start': 9, 'end': 22})
+        start_hour = working_hours.get('start', 9)
+        end_hour = working_hours.get('end', 22)
+        
         # 检查当前时间是否在工作时间范围内
         current_hour = datetime.now().hour
-        for start, end in self.config['working_hours']:
-            if start <= current_hour < end:
-                logger.info(f"当前时间 {current_hour}:00 在工作时间范围 {start}:00-{end}:00 内")
-                return True
+        if start_hour <= current_hour < end_hour:
+            logger.info(f"当前时间 {current_hour}:00 在工作时间范围 {start_hour}:00-{end_hour}:00 内")
+            return True
                 
-        logger.info(f"当前时间 {current_hour}:00 不在任何工作时间范围内")
+        logger.info(f"当前时间 {current_hour}:00 不在工作时间范围 {start_hour}:00-{end_hour}:00 内")
         return False
         
     def random_sleep(self, min_time, max_time):

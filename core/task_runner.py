@@ -86,150 +86,189 @@ class TaskRunner:
             
             # 获取功能开关状态
             features = self.config.get('features', {})
-            unfollow_enabled = features.get('unfollow_users', False)
-            check_follows_enabled = features.get('check_follows', False)
-            check_fans_enabled = features.get('check_fans', False)
-            follow_back_enabled = features.get('follow_back', False)
-            follow_video_fans_enabled = features.get('follow_video_fans', False)
-            get_video_reviewers_enabled = features.get('get_video_reviewers', False)
-            fan_interaction_enabled = features.get('fan_interaction', False)
+            
+            # 视频任务功能开关
+            video_tasks_enabled = features.get('video_tasks', {}).get('enabled', False)
+            get_video_reviewers_enabled = features.get('video_tasks', {}).get('get_video_reviewers', False)
+            follow_video_fans_enabled = features.get('video_tasks', {}).get('follow_video_fans', False)
+            
+            # 关注列表任务功能开关
+            follow_list_tasks_enabled = features.get('follow_list_tasks', {}).get('enabled', False)
+            check_follows_enabled = features.get('follow_list_tasks', {}).get('check_follows', False)
+            unfollow_enabled = features.get('follow_list_tasks', {}).get('unfollow_users', False)
+            
+            # 粉丝列表任务功能开关
+            fan_list_tasks_enabled = features.get('fan_list_tasks', {}).get('enabled', False)
+            check_fans_enabled = features.get('fan_list_tasks', {}).get('check_fans', False)
+            follow_back_enabled = features.get('fan_list_tasks', {}).get('follow_back', False)
+            fan_interaction_enabled = features.get('fan_list_tasks', {}).get('fan_interaction', False)
             
             logger.info(
-                f"功能开关状态: 检查关注列表={check_follows_enabled}, "
-                f"取关={unfollow_enabled}, "
-                f"检查粉丝列表={check_fans_enabled}, "
-                f"回关={follow_back_enabled}, "
-                f"粉丝私信互动={fan_interaction_enabled}, "
-                f"关注视频评论者={follow_video_fans_enabled}, "
-                f"提取评论用户={get_video_reviewers_enabled}"
+                f"功能开关状态:\n"
+                f"视频任务: 总开关={video_tasks_enabled}, 提取评论用户={get_video_reviewers_enabled}, 关注视频评论者={follow_video_fans_enabled}\n"
+                f"关注列表任务: 总开关={follow_list_tasks_enabled}, 检查关注列表={check_follows_enabled}, 取关={unfollow_enabled}\n"
+                f"粉丝列表任务: 总开关={fan_list_tasks_enabled}, 检查粉丝列表={check_fans_enabled}, 回关={follow_back_enabled}, 粉丝私信互动={fan_interaction_enabled}"
             )
             
             # 记录是否执行了视频相关任务
             video_tasks_executed = False
             
-            # 第一步：执行视频评论和提取用户任务
-            if get_video_reviewers_enabled:
-                result = self.video_comment_manager.run_video_comment_task()
-                if not result['success']:
-                    logger.error("视频评论任务执行失败")
-                    return {'success': False, 'reason': '视频访问或评论失败'}
-                logger.info("视频评论任务执行成功")
-                video_tasks_executed = True
-            
-            # 第二步：执行关注视频评论者任务
-            if follow_video_fans_enabled:
-                try:
-                    # 更新配置中的视频关注开关
-                    self.follow_fans_manager.config['features'] = {
-                        'follow_video_fans': follow_video_fans_enabled
-                    }
-                    
-                    task_result = self.follow_fans_manager.run_follow_fans_task()
-                    if task_result:
-                        logger.info("关注视频评论者任务执行成功")
-                    else:
-                        logger.error("关注视频评论者任务执行失败")
-                        return {'success': False, 'reason': '关注视频评论者任务失败'}
-                    video_tasks_executed = True
-                except Exception as e:
-                    logger.error(f"执行关注视频评论者任务时出错: {str(e)}")
-                    self.handle_task_failure("执行关注视频评论者任务时出错", e)
-                    return {'success': False, 'reason': str(e)}
+            #=============================================
+            # 1. 视频任务
+            #=============================================
+            if video_tasks_enabled:
+                logger.info("开始执行视频任务...")
+                
+                # 第一步：执行视频评论和提取用户任务
+                if get_video_reviewers_enabled:
+                    logger.info("第一步：执行视频评论和提取用户任务")
+                    try:
+                        result = self.video_comment_manager.run_video_comment_task()
+                        if not result['success']:
+                            logger.error("视频评论任务执行失败")
+                            return {'success': False, 'reason': '视频访问或评论失败'}
+                        logger.info("视频评论任务执行成功")
+                        video_tasks_executed = True
+                    except Exception as e:
+                        logger.error(f"执行视频评论任务时出错: {str(e)}")
+                        self.handle_task_failure("执行视频评论任务时出错", e, "video_comment_task_error")
+                else:
+                    logger.info("视频评论和提取用户功能已禁用，跳过任务")
+                
+                # 第二步：执行关注视频评论者任务
+                if follow_video_fans_enabled:
+                    logger.info("第二步：执行关注视频评论者任务")
+                    try:
+                        # 更新配置中的视频关注开关
+                        self.follow_fans_manager.config['features'] = {
+                            'follow_video_fans': follow_video_fans_enabled
+                        }
+                        
+                        task_result = self.follow_fans_manager.run_follow_fans_task()
+                        if task_result:
+                            logger.info("关注视频评论者任务执行成功")
+                        else:
+                            logger.error("关注视频评论者任务执行失败")
+                            return {'success': False, 'reason': '关注视频评论者任务失败'}
+                        video_tasks_executed = True
+                    except Exception as e:
+                        logger.error(f"执行关注视频评论者任务时出错: {str(e)}")
+                        self.handle_task_failure("执行关注视频评论者任务时出错", e, "follow_fans_task_error")
+                else:
+                    logger.info("关注视频评论者功能已禁用，跳过任务")
             else:
-                logger.info("关注视频评论者功能已禁用，跳过任务")
-
+                logger.info("视频任务功能已禁用，跳过所有视频相关任务")
+            
+            #=============================================
+            # 2. 关注列表任务
+            #=============================================
             # 如果执行了视频相关任务，则不执行关注列表相关任务
             if video_tasks_executed:
                 logger.info("已执行视频相关任务，跳过关注列表相关任务")
-                check_follows_enabled = False
-                unfollow_enabled = False
+            elif follow_list_tasks_enabled:
+                logger.info("开始执行关注列表任务...")
+                
+                # 第三步：执行取关任务
+                if unfollow_enabled:
+                    logger.info("第三步：执行取关任务")
+                    try:
+                        if self.run_unfollow_task():
+                            logger.info("取关任务执行成功")
+                        else:
+                            logger.warning("取关任务执行失败，检查浏览器状态")
+                            if not self.browser_manager.check_and_restart_browser():
+                                logger.error("浏览器状态异常，无法继续执行任务")
+                                return {'success': False, 'reason': '浏览器状态异常'}
+                    except Exception as e:
+                        logger.error(f"执行取关任务时出错: {str(e)}")
+                        self.handle_task_failure("执行取关任务时出错", e, "unfollow_task_error")
+                else:
+                    logger.info("取关功能已禁用，跳过取关任务")
+                
+                # 第四步：执行检查关注列表任务
+                if check_follows_enabled:
+                    logger.info("第四步：执行检查关注列表任务")
+                    try:
+                        if self.follow_list_manager.run_check_follows_task():
+                            # 获取配置的任务间隔时间
+                            task_interval = self.config.get('operation', {}).get('common', {}).get('task_interval', 3600)  # 默认1小时
+                            logger.info(f"检查关注列表任务完成，休息 {task_interval} 秒后执行下一轮任务")
+                            return {
+                                'success': True,
+                                'task_type': 'check_follows',
+                                'interval': task_interval
+                            }
+                        else:
+                            logger.warning("检查关注列表任务执行失败，检查浏览器状态")
+                            if not self.browser_manager.check_and_restart_browser():
+                                logger.error("浏览器状态异常，无法继续执行任务")
+                                return {'success': False, 'reason': '浏览器状态异常'}
+                    except Exception as e:
+                        logger.error(f"执行检查关注列表任务时出错: {str(e)}")
+                        self.handle_task_failure("执行检查关注列表任务时出错", e, "check_follows_task_error")
+                else:
+                    logger.info("检查关注列表功能已禁用，跳过检查关注列表任务")
+            else:
+                logger.info("关注列表任务功能已禁用，跳过所有关注列表相关任务")
             
-            # 第三步：执行取关任务（如果没有执行视频相关任务）
-            if unfollow_enabled:
-                try:
-                    if self.run_unfollow_task():
-                        logger.info("取关任务执行成功")
-                    else:
-                        logger.warning("取关任务执行失败，检查浏览器状态")
-                        if not self.browser_manager.check_and_restart_browser():
-                            logger.error("浏览器状态异常，无法继续执行任务")
-                            return {'success': False, 'reason': '浏览器状态异常'}
-                except Exception as e:
-                    logger.error(f"执行取关任务时出错: {str(e)}")
-                    self.handle_task_failure("执行取关任务时出错", e)
+            #=============================================
+            # 3. 粉丝列表任务
+            #=============================================
+            if fan_list_tasks_enabled:
+                logger.info("开始执行粉丝列表任务...")
+                
+                # 第五步：执行检查粉丝列表任务
+                if check_fans_enabled:
+                    logger.info("第五步：执行检查粉丝列表任务")
+                    try:
+                        if self.fan_manager.run_check_fans_task():
+                            logger.info("检查粉丝列表任务执行成功")
+                        else:
+                            logger.warning("检查粉丝列表任务执行失败，检查浏览器状态")
+                            if not self.browser_manager.check_and_restart_browser():
+                                logger.error("浏览器状态异常，无法继续执行任务")
+                                return {'success': False, 'reason': '浏览器状态异常'}
+                    except Exception as e:
+                        logger.error(f"执行检查粉丝列表任务时出错: {str(e)}")
+                        self.handle_task_failure("执行检查粉丝列表任务时出错", e, "check_fans_task_error")
+                else:
+                    logger.info("检查粉丝列表功能已禁用，跳过检查粉丝列表任务")
+                
+                # 第六步：执行回关任务
+                if follow_back_enabled:
+                    logger.info("第六步：执行回关任务")
+                    try:
+                        if self.fan_manager.run_follow_back_task():
+                            logger.info("回关任务执行成功")
+                        else:
+                            logger.warning("回关任务执行失败，检查浏览器状态")
+                            if not self.browser_manager.check_and_restart_browser():
+                                logger.error("浏览器状态异常，无法继续执行任务")
+                                return {'success': False, 'reason': '浏览器状态异常'}
+                    except Exception as e:
+                        logger.error(f"执行回关任务时出错: {str(e)}")
+                        self.handle_task_failure("执行回关任务时出错", e, "follow_back_task_error")
+                else:
+                    logger.info("回关功能已禁用，跳过回关任务")
+                
+                # 第七步：执行粉丝私信互动任务
+                if fan_interaction_enabled:
+                    logger.info("第七步：执行粉丝私信互动任务")
+                    try:
+                        if self.fan_manager.run_fan_interaction_task():
+                            logger.info("粉丝私信互动任务执行成功")
+                        else:
+                            logger.warning("粉丝私信互动任务执行失败，检查浏览器状态")
+                            if not self.browser_manager.check_and_restart_browser():
+                                logger.error("浏览器状态异常，无法继续执行任务")
+                                return {'success': False, 'reason': '浏览器状态异常'}
+                    except Exception as e:
+                        logger.error(f"执行粉丝私信互动任务时出错: {str(e)}")
+                        self.handle_task_failure("执行粉丝私信互动任务时出错", e, "fan_interaction_task_error")
+                else:
+                    logger.info("粉丝私信互动功能已禁用，跳过私信互动任务")
             else:
-                logger.info("取关功能已禁用或已执行视频相关任务，跳过取关任务")
-            
-            # 第四步：执行检查关注列表任务（如果没有执行视频相关任务）
-            if check_follows_enabled:
-                try:
-                    if self.follow_list_manager.run_check_follows_task():
-                        # 获取配置的任务间隔时间
-                        task_interval = self.config.get('operation', {}).get('task_interval', 3600)  # 默认1小时
-                        logger.info(f"检查关注列表任务完成，休息 {task_interval} 秒后执行下一轮任务")
-                        return {
-                            'success': True,
-                            'task_type': 'check_follows',
-                            'interval': task_interval
-                        }
-                    else:
-                        logger.warning("检查关注列表任务执行失败，检查浏览器状态")
-                        if not self.browser_manager.check_and_restart_browser():
-                            logger.error("浏览器状态异常，无法继续执行任务")
-                            return {'success': False, 'reason': '浏览器状态异常'}
-                except Exception as e:
-                    logger.error(f"执行检查关注列表任务时出错: {str(e)}")
-                    self.handle_task_failure("执行检查关注列表任务时出错", e)
-            else:
-                logger.info("检查关注列表功能已禁用或已执行视频相关任务，跳过检查关注列表任务")
-            
-            # 第五步：执行检查粉丝列表任务（放在最后执行）
-            if check_fans_enabled:
-                try:
-                    if self.fan_manager.run_check_fans_task():
-                        logger.info("检查粉丝列表任务执行成功")
-                    else:
-                        logger.warning("检查粉丝列表任务执行失败，检查浏览器状态")
-                        if not self.browser_manager.check_and_restart_browser():
-                            logger.error("浏览器状态异常，无法继续执行任务")
-                            return {'success': False, 'reason': '浏览器状态异常'}
-                except Exception as e:
-                    logger.error(f"执行检查粉丝列表任务时出错: {str(e)}")
-                    self.handle_task_failure("执行检查粉丝列表任务时出错", e)
-            else:
-                logger.info("检查粉丝列表功能已禁用，跳过检查粉丝列表任务")
-            
-            # 第六步：执行回关任务（放在最后执行）
-            if follow_back_enabled:
-                try:
-                    if self.fan_manager.run_follow_back_task():
-                        logger.info("回关任务执行成功")
-                    else:
-                        logger.warning("回关任务执行失败，检查浏览器状态")
-                        if not self.browser_manager.check_and_restart_browser():
-                            logger.error("浏览器状态异常，无法继续执行任务")
-                            return {'success': False, 'reason': '浏览器状态异常'}
-                except Exception as e:
-                    logger.error(f"执行回关任务时出错: {str(e)}")
-                    self.handle_task_failure("执行回关任务时出错", e)
-            else:
-                logger.info("回关功能已禁用，跳过回关任务")
-
-            # 第七步：执行粉丝私信互动任务
-            if fan_interaction_enabled:
-                try:
-                    if self.fan_manager.run_fan_interaction_task():
-                        logger.info("粉丝私信互动任务执行成功")
-                    else:
-                        logger.warning("粉丝私信互动任务执行失败，检查浏览器状态")
-                        if not self.browser_manager.check_and_restart_browser():
-                            logger.error("浏览器状态异常，无法继续执行任务")
-                            return {'success': False, 'reason': '浏览器状态异常'}
-                except Exception as e:
-                    logger.error(f"执行粉丝私信互动任务时出错: {str(e)}")
-                    self.handle_task_failure("执行粉丝私信互动任务时出错", e)
-            else:
-                logger.info("粉丝私信互动功能已禁用，跳过私信互动任务")
+                logger.info("粉丝列表任务功能已禁用，跳过所有粉丝列表相关任务")
             
             return {'success': True}
             
@@ -250,7 +289,7 @@ class TaskRunner:
                 return False
             
             # 获取今日可取关数量
-            max_unfollow_per_day = self.config.get('operation', {}).get('max_unfollow_per_day', 100)
+            max_unfollow_per_day = self.config.get('operation', {}).get('follow_list_tasks', {}).get('daily_unfollow_limit', 100)
             unfollow_count_today = self.db.get_today_unfollow_count()
             remaining_unfollow = max_unfollow_per_day - unfollow_count_today
             
@@ -261,7 +300,7 @@ class TaskRunner:
                 return True
             
             # 获取取关天数阈值
-            unfollow_days = self.config.get('operation', {}).get('unfollow_days', 3)
+            unfollow_days = self.config.get('operation', {}).get('follow_list_tasks', {}).get('unfollow_days', 3)
             
             # 获取需要取关的用户
             users_to_unfollow = self.db.get_users_to_unfollow(remaining_unfollow, unfollow_days)
@@ -273,7 +312,7 @@ class TaskRunner:
             logger.info(f"找到 {len(users_to_unfollow)} 个需要取关的用户")
             
             # 分批处理取关用户
-            batch_size = self.config.get('operation', {}).get('unfollow_batch_size', 10)
+            batch_size = self.config.get('operation', {}).get('follow_list_tasks', {}).get('unfollow_batch_size', 10)
             
             for i in range(0, len(users_to_unfollow), batch_size):
                 batch = users_to_unfollow[i:i+batch_size]
@@ -318,7 +357,10 @@ class TaskRunner:
                             logger.warning(f"取关用户失败: {user['username']} ({user['user_id']})")
                         
                         # 随机等待一段时间再处理下一个用户
-                        wait_time = random.uniform(5, 15)
+                        wait_time = random.uniform(
+                            self.config.get('operation', {}).get('follow_list_tasks', {}).get('unfollow_interval', [5, 15])[0],
+                            self.config.get('operation', {}).get('follow_list_tasks', {}).get('unfollow_interval', [5, 15])[1]
+                        )
                         logger.info(f"等待 {wait_time:.2f} 秒后处理下一个用户")
                         time.sleep(wait_time)
                         
@@ -332,7 +374,10 @@ class TaskRunner:
                                 return False
                         
                         # 继续处理下一个用户
-                        wait_time = random.uniform(5, 15)
+                        wait_time = random.uniform(
+                            self.config.get('operation', {}).get('follow_list_tasks', {}).get('unfollow_interval', [5, 15])[0],
+                            self.config.get('operation', {}).get('follow_list_tasks', {}).get('unfollow_interval', [5, 15])[1]
+                        )
                         logger.info(f"等待 {wait_time:.2f} 秒后处理下一个用户")
                         time.sleep(wait_time)
                 
@@ -341,7 +386,7 @@ class TaskRunner:
                 logger.info(f"第 {i//batch_size + 1} 批取关完成，成功率: {success_rate:.2f}")
                 
                 # 如果成功率过低，暂停取关任务
-                min_success_rate = self.config.get('operation', {}).get('min_unfollow_success_rate', 0.7)
+                min_success_rate = self.config.get('operation', {}).get('follow_list_tasks', {}).get('min_unfollow_success_rate', 0.7)
                 if success_rate < min_success_rate:
                     logger.warning(f"取关成功率 {success_rate:.2f} 低于阈值 {min_success_rate}，暂停取关任务")
                     break
@@ -382,7 +427,7 @@ class TaskRunner:
                 return False
             
             # 获取配置的任务间隔时间
-            task_interval = self.config.get('task', {}).get('check_follows_interval', 3600)  # 默认1小时
+            task_interval = self.config.get('operation', {}).get('common', {}).get('task_interval', 3600)  # 默认1小时
             
             if self.follow_list_manager.run_check_follows_task():
                 logger.info(f"检查关注列表任务完成，休息 {task_interval} 秒后执行下一轮任务")

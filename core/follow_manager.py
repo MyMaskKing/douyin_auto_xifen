@@ -1029,7 +1029,8 @@ class FollowListManager:
                                 for user in batch:
                                     try:
                                         if user['user_id']:  # 确保有用户ID
-                                            unfollow_days = self.config.get('operation', {}).get('unfollow_days', 3)
+                                            # 获取取关天数阈值
+                                            unfollow_days = self.config.get('operation', {}).get('follow_list_tasks', {}).get('unfollow_days', 3)
                                             if self.db.mark_user_for_unfollow(user['user_id'], user['username'], unfollow_days):
                                                 marked_count += 1
                                     except Exception as e:

@@ -36,24 +36,24 @@ class MessageManager:
         self.random_sleep = browser_manager.random_sleep
         
         # 每日最大私信数量
-        self.max_messages_per_day = config.get('operation', {}).get('message', {}).get('max_messages_per_day', 100)
+        self.max_messages_per_day = config.get('operation', {}).get('fan_list_tasks', {}).get('max_messages_per_day', 100)
         
         # 每轮处理的粉丝数量
-        self.batch_size = config.get('operation', {}).get('message', {}).get('batch_size', 50)
+        self.batch_size = config.get('operation', {}).get('fan_list_tasks', {}).get('batch_size', 50)
         
         # 私信模板
         self.message_templates = {
-            0: config.get('operation', {}).get('message', {}).get('templates', {}).get('day1', [
+            0: config.get('message_templates', {}).get('day_1', [
                 "你好呀，很高兴认识你~",
                 "Hi，我是{username}，谢谢你的关注！",
                 "嗨，感谢关注，希望我们能成为好朋友~"
             ]),
-            1: config.get('operation', {}).get('message', {}).get('templates', {}).get('day2', [
+            1: config.get('message_templates', {}).get('day_2', [
                 "最近在忙什么呢？",
                 "今天过得怎么样呀？",
                 "有什么有趣的事情想分享吗？"
             ]),
-            2: config.get('operation', {}).get('message', {}).get('templates', {}).get('day3', [
+            2: config.get('message_templates', {}).get('day_3', [
                 "这几天聊得很开心，希望以后也能经常互动~",
                 "感谢这几天的交流，你真的很有趣！",
                 "和你聊天很愉快，期待更多的分享~"
