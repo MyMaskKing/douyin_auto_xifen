@@ -1026,10 +1026,11 @@ class Database:
                 """
                 UPDATE fans 
                 SET days_followed = ?,
-                    is_valid_fan = CASE WHEN ? >= 3 THEN 1 ELSE 0 END
+                    is_valid_fan = CASE WHEN ? >= 3 THEN 1 ELSE 0 END,
+                    last_message_time = ?
                 WHERE user_id = ?
                 """,
-                (days_since_follow, days_since_follow, user_id)
+                (days_since_follow, days_since_follow,now, user_id)
             )
             
             self.conn.commit()
@@ -1082,4 +1083,60 @@ class Database:
             
         except Exception as e:
             logger.error(f"标记用户私信失败状态失败: {str(e)}")
+            return False
+            
+    def is_user_exists(self, user_id):
+        """
+        检查用户是否存在于follows表中
+        
+        参数:
+            user_id: 用户ID
+            
+        返回:
+            bool: 用户是否存在
+        """
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "SELECT COUNT(*) FROM follows WHERE user_id = ?",
+                (user_id,)
+            )
+            return cursor.fetchone()[0] > 0
+            
+        except Exception as e:
+            logger.error(f"检查用户是否存在失败: {str(e)}")
+            return False
+            
+    def update_follow_status(self, user_id, from_fan=0):
+        """
+        更新用户的关注状态
+        
+        参数:
+            user_id: 用户ID
+            from_fan: 是否来自粉丝，1表示是，0表示否
+            
+        返回:
+            bool: 是否成功更新
+        """
+        try:
+            now = datetime.now()
+            cursor = self.conn.cursor()
+            
+            cursor.execute(
+                """
+                UPDATE follows 
+                SET is_following = 1,
+                    from_fan = ?,
+                    follow_time = ?
+                WHERE user_id = ?
+                """,
+                (from_fan, now, user_id)
+            )
+            
+            self.conn.commit()
+            logger.info(f"已更新用户 {user_id} 的关注状态")
+            return True
+            
+        except Exception as e:
+            logger.error(f"更新用户关注状态失败: {str(e)}")
             return False 

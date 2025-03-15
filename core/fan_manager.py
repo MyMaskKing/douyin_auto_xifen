@@ -700,8 +700,6 @@ class FanManager:
                         self.db.update_fan_interaction(user_id)
                         logger.info(f"完成与粉丝 {username} 的第 {days_since_follow + 1} 天互动")
                     
-                    # 随机延迟，避免操作过快
-                    self.random_sleep(2, 5)
                     
                 except Exception as e:
                     logger.error(f"处理粉丝 {fan.get('username', 'unknown')} 的互动任务失败: {str(e)}")

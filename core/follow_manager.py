@@ -37,191 +37,6 @@ class FollowListManager:
         self.wait = browser_manager.wait
         self.random_sleep = browser_manager.random_sleep
         
-    def follow_user(self, fan_item):
-        """
-        关注用户
-        
-        参数:
-            fan_item: 粉丝项，包含元素、按钮和名称
-            
-        返回:
-            成功返回True，失败返回False
-        """
-        try:
-            # 检查fan_item是否是字典类型（新格式）
-            if isinstance(fan_item, dict) and "button" in fan_item:
-                # 直接使用字典中的按钮
-                follow_btn = fan_item["button"]
-                
-                # 尝试提取用户信息
-                try:
-                    parent_element = fan_item["element"]
-                    
-                    # 尝试查找用户名元素 - 使用更精确的选择器
-                    username = "未知用户"
-                    username_selectors = [
-                        ".//span[contains(@class, 'arnSiSbK')]",
-                        ".//a[contains(@class, 'uz1VJwFY')]//span//span[contains(@class, 'arnSiSbK')]",
-                        ".//div[contains(@class, 'kUKK9Qal')]//a//span//span[contains(@class, 'arnSiSbK')]",
-                        ".//span[contains(@class, 'name') or contains(@class, 'nickname')]", 
-                        ".//div[contains(@class, 'name') or contains(@class, 'nickname')]",
-                        ".//div[contains(@class, 'X8ljGzft')]//div[contains(@class, 'kUKK9Qal')]//a//span",
-                        ".//a[contains(@href, '/user/')]//span"
-                    ]
-                    
-                    for selector in username_selectors:
-                        name_elements = parent_element.find_elements(By.XPATH, selector)
-                        if name_elements:
-                            text_content = name_elements[0].text.strip()
-                            if text_content:
-                                username = text_content
-                                logger.info(f"通过选择器 {selector} 找到用户名: {username}")
-                                break
-                    
-                    # 如果上述方法未能提取用户名，尝试使用JavaScript
-                    if username == "未知用户":
-                        try:
-                            username = self.driver.execute_script("""
-                                var element = arguments[0];
-                                // 尝试查找arnSiSbK类的span元素
-                                var nameElements = element.querySelectorAll('span.arnSiSbK');
-                                if (nameElements.length > 0) {
-                                    return nameElements[0].textContent.trim();
-                                }
-                                
-                                // 尝试查找所有嵌套的span元素
-                                var spans = element.querySelectorAll('span span span');
-                                for (var i = 0; i < spans.length; i++) {
-                                    var text = spans[i].textContent.trim();
-                                    if (text && text.length > 0) {
-                                        return text;
-                                    }
-                                }
-                                
-                                return "未知用户";
-                            """, parent_element)
-                            if username != "未知用户":
-                                logger.info(f"通过JavaScript找到用户名: {username}")
-                        except Exception as e:
-                            logger.warning(f"使用JavaScript提取用户名失败: {str(e)}")
-                        
-                    # 尝试查找用户ID元素
-                    id_elements = parent_element.find_elements(By.XPATH, 
-                        ".//span[contains(@class, 'id') or contains(@class, 'unique')] | .//div[contains(@class, 'id') or contains(@class, 'unique')]")
-                    
-                    user_id = None
-                    if id_elements:
-                        user_id = id_elements[0].text
-                        # 有时候用户ID会带有@前缀，需要去掉
-                        if user_id and user_id.startswith('@'):
-                            user_id = user_id[1:]
-                    
-                    # 如果没有找到用户ID，尝试从链接中提取
-                    if not user_id:
-                        link_elements = parent_element.find_elements(By.XPATH, ".//a[contains(@href, '/user/')]")
-                        if link_elements:
-                            href = link_elements[0].get_attribute('href')
-                            if href and '/user/' in href:
-                                user_id = href.split('/user/')[-1].split('?')[0]
-                                logger.info(f"从链接中提取用户ID: {user_id}")
-                    
-                    # 如果仍然没有找到用户ID，使用时间戳作为临时ID
-                    if not user_id:
-                        user_id = f"temp_{int(time.time())}_{random.randint(1000, 9999)}"
-                        
-                    logger.info(f"准备关注用户: {username} ({user_id})")
-                except Exception as e:
-                    logger.error(f"提取用户信息失败: {str(e)}")
-                    # 保存错误截图
-                    save_screenshot(self.driver, "error", level="ERROR")
-                    # 使用默认值
-                    username = "未知用户"
-                    user_id = f"temp_{int(time.time())}_{random.randint(1000, 9999)}"
-                
-                # 检查是否已经关注过
-                try:
-                    if self.db.is_followed(user_id):
-                        logger.info(f"已经关注过用户: {username} ({user_id})")
-                        return False
-                except Exception as e:
-                    logger.warning(f"检查用户关注状态失败: {str(e)}")
-                
-                # 检查按钮状态
-                try:
-                    # 检查按钮是否可见
-                    if not follow_btn.is_displayed():
-                        logger.warning(f"关注按钮不可见: {username}")
-                        return False
-                    
-                    # 检查按钮文本
-                    button_text = follow_btn.text
-                    button_class = follow_btn.get_attribute("class")
-                    button_data_e2e = follow_btn.get_attribute("data-e2e")
-                    
-                    logger.info(f"关注按钮信息: 文本='{button_text}', 类名='{button_class}', data-e2e='{button_data_e2e}'")
-                    
-                    # 检查是否已经关注
-                    if button_text and ("已关注" in button_text or "互相关注" in button_text):
-                        logger.info(f"用户已经被关注: {username}")
-                        # 更新数据库
-                        self.db.add_follow_record(user_id, username)
-                        return False
-                except Exception as e:
-                    logger.warning(f"检查按钮状态失败: {str(e)}")
-                
-                # 保存关注前的截图
-                save_screenshot(self.driver, "before_follow", level="NORMAL", user_id=user_id)
-                
-                # 尝试点击关注按钮
-                try:
-                    # 滚动到按钮位置
-                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", follow_btn)
-                    self.random_sleep(1, 2)
-                    
-                    # 点击按钮
-                    follow_btn.click()
-                    logger.info(f"成功点击关注按钮: {username}")
-                    self.random_sleep(2, 3)  # 增加等待时间，等待弹窗出现
-                    
-                    # 检查是否出现弹窗
-                    popup_found = self.check_and_handle_follow_popup()
-                    if popup_found:
-                        logger.info("检测到关注弹窗并已处理")
-                    
-                except ElementClickInterceptedException:
-                    # 如果常规点击失败，尝试JavaScript点击
-                    logger.info(f"常规点击失败，尝试JavaScript点击: {username}")
-                    self.driver.execute_script("arguments[0].click();", follow_btn)
-                    self.random_sleep(2, 3)  # 增加等待时间，等待弹窗出现
-                    
-                    # 检查是否出现弹窗
-                    popup_found = self.check_and_handle_follow_popup()
-                    if popup_found:
-                        logger.info("检测到关注弹窗并已处理")
-                        
-                except Exception as e:
-                    logger.error(f"点击关注按钮失败: {str(e)}")
-                    # 保存错误截图
-                    save_screenshot(self.driver, "error", level="ERROR", user_id=user_id)
-                    return False
-                
-                # 保存关注后的截图
-                save_screenshot(self.driver, "after_follow", level="NORMAL", user_id=user_id)
-                
-                # 更新数据库
-                self.db.add_follow_record(user_id, username)
-                logger.info(f"成功关注用户: {username} ({user_id})")
-                return True
-            else:
-                logger.error("无效的粉丝项格式")
-                return False
-                
-        except Exception as e:
-            logger.error(f"关注用户失败: {str(e)}")
-            # 保存错误截图
-            save_screenshot(self.driver, "error", level="ERROR")
-            return False
-            
     def check_and_handle_follow_popup(self):
         """
         检查并处理关注按钮点击后出现的弹窗
@@ -230,22 +45,17 @@ class FollowListManager:
             如果找到并处理了弹窗返回True，否则返回False
         """
         try:
-            # 保存弹窗截图
-            save_screenshot(self.driver, "follow_popup", level="NORMAL")
-            
-            # 检查弹窗是否存在 - 使用截图中的类名精确定位
+            # 检查弹窗是否存在 - 使用data-e2e属性和DOM结构
             logger.info("检查关注弹窗是否存在...")
             popup_found = False
             popup_element = None
             
-            # 根据截图中的类名定义更精确的选择器
+            # 使用data-e2e属性和DOM结构定位弹窗
             popup_selectors = [
-                "//div[contains(@class, 'lg1KBICm k5PKYkwW GjZZha0A')]",  # 根据截图中的类名
-                "//div[contains(@class, 'lg1KBICm')]",  # 备用选择器
-                "//div[contains(@class, 'modal') or contains(@class, 'popup')]",  # 通用备用选择器
-                "//div[.//span[contains(text(), '关注')] and .//span[contains(text(), '粉丝')]]",
-                "//div[contains(., '关注') and contains(., '粉丝') and .//button[contains(@class, 'close')]]",
-                "//div[.//div[contains(text(), '相互关注') or contains(text(), '互相关注') or contains(text(), '已关注')]]"
+                "//div[@data-e2e='user-fans-container']",  # 主要选择器,使用data-e2e属性
+                "//div[.//button[@data-e2e='user-info-follow-btn']]/..",  # 基于关注按钮的父容器
+                "//div[.//div[contains(@class, 'semi-modal-content')]]",  # 基于semi-modal结构
+                "//div[.//div[contains(@class, 'semi-tabs-content')]]"  # 基于tabs结构
             ]
             
             for selector in popup_selectors:
@@ -265,126 +75,103 @@ class FollowListManager:
                 logger.info("未检测到关注弹窗")
                 return False
             
-            # 根据截图中的HTML结构定义更精确的用户项选择器
-            user_item_selectors = [
-                ".//div[contains(@class, 'MryVEcQw')]",  # 根据截图中的类名
-                ".//div[contains(@class, 'uMlSMsI')]",   # 根据截图中的类名
-                ".//div[contains(@class, 'i5YKH7Ag')]",  # 根据截图中的类名
-                ".//div[contains(@class, '15U4dMnB')]",
-                ".//div[contains(@class, 'ycRKGMm')]/..",
-                ".//button[contains(@class, 'semi-button-secondary')]/..",
-                ".//button[contains(@class, 'semi-button') and contains(@class, 'semi-button-secondary')]/..",
-                ".//div[contains(@class, 'semi-button-content')]/../../..",
-                ".//div[.//button[contains(@class, 'semi-button')]]",
-                ".//div[.//span[contains(@class, 'semi-button-content')]]",
-                ".//div[.//div[contains(text(), '已关注') or contains(text(), '相互关注')]]"
-            ]
-            
-            # 尝试滚动弹窗以加载更多用户
-            logger.info("尝试滚动弹窗以加载更多用户...")
-            max_scroll_times = 5
-            
-            for i in range(max_scroll_times):
-                # 使用JavaScript滚动弹窗
-                self.driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", popup_element)
-                logger.info(f"滚动弹窗 ({i+1}/{max_scroll_times})...")
-                self.random_sleep(1, 2)
-                
-                # 保存滚动后的截图
-                save_screenshot(self.driver, f"follow_popup_scroll_{i}", level="DEBUG")
-            
-            # 查找未互相关注的用户并关注
+            # 基于DOM层级结构定位用户项
             user_items = []
-            for selector in user_item_selectors:
-                try:
-                    items = popup_element.find_elements(By.XPATH, selector)
-                    if items:
-                        logger.info(f"在弹窗中找到 {len(items)} 个用户项: {selector}")
-                        user_items = items
-                        break
-                    else:
-                        logger.warning(f"未找到用户项: {selector}")
-                except Exception as e:
-                    logger.warning(f"使用选择器 {selector} 查找用户项失败: {str(e)}")
-            
+            try:
+                # 使用container的直接子元素层级结构查找用户项
+                items = popup_element.find_elements(By.XPATH, "./div/div[.//a[contains(@href, '/user/')]]")
+                if items:
+                    logger.info(f"在弹窗中找到 {len(items)} 个用户项")
+                    user_items = items
+                else:
+                    logger.warning("未找到用户项")
+            except Exception as e:
+                logger.warning(f"查找用户项失败: {str(e)}")
+
             if user_items:
                 # 处理每个用户项
                 for item in user_items:
                     try:
-                        # 检查是否是互相关注
-                        mutual_selectors = [
-                            ".//button[contains(@class, 'semi-button-secondary')]//div[contains(text(), '相互关注')]",
-                            ".//div[contains(@class, 'zPZJ3j40') and contains(text(), '相互关注')]",
-                            ".//span[contains(@class, 'semi-button-content')]//div[contains(text(), '相互关注')]",
-                            ".//button[contains(@class, 'xjIRvxqr')]//div[contains(text(), '相互关注')]"
-                        ]
+                        # 检查关注状态 - 使用按钮层级结构
+                        follow_status = None
+                        follow_button = None
                         
-                        is_mutual = False
-                        for mutual_selector in mutual_selectors:
-                            mutual_elems = item.find_elements(By.XPATH, mutual_selector)
-                            if mutual_elems:
-                                is_mutual = True
-                                break
+                        # 查找关注按钮 - 使用层级结构
+                        buttons = item.find_elements(By.XPATH, ".//button[.//div[string-length(text()) > 0]]")
                         
-                        # 如果不是互相关注，尝试关注
-                        if not is_mutual:
-                            # 提取用户名 - 使用截图中的类名精确匹配
-                            username = ""
-                            username_selectors = [
-                                ".//div[contains(@class, 'QeORD5K8')]",  # 根据截图中的类名
-                                ".//div[contains(@class, 'FjupSA6k')]",  # 根据截图中的类名
-                                ".//span[contains(@class, 'arnSiSbK')]",
-                                ".//a[contains(@class, 'uz1VJwFY')]//span//span[contains(@class, 'arnSiSbK')]",
-                                ".//div[contains(@class, 'kUKK9Qal')]//a//span//span[contains(@class, 'arnSiSbK')]",
-                                ".//div[contains(@class, 'X8ljGzft')]//div[contains(@class, 'kUKK9Qal')]//a//span",
-                                ".//a[contains(@href, '/user/')]//span"
-                            ]
-                            
-                            for username_selector in username_selectors:
-                                try:
-                                    username_elements = item.find_elements(By.XPATH, username_selector)
-                                    if username_elements:
-                                        text_content = username_elements[0].text.strip()
-                                        if text_content:
-                                            username = text_content
-                                            logger.info(f"找到用户名: {username}")
-                                            break
-                                except Exception as e:
-                                    logger.warning(f"使用选择器 {username_selector} 提取用户名失败: {str(e)}")
-                            
-                            # 如果仍然没有找到用户名，使用默认值
-                            if not username:
-                                username = "弹窗用户"
-                            
-                            # 查找关注按钮
-                            follow_button_selectors = [
-                                ".//button[contains(@class, 'semi-button-primary')]",
-                                ".//button[contains(text(), '关注') and not(contains(text(), '已关注')) and not(contains(text(), '相互关注'))]",
-                                ".//div[contains(text(), '关注') and not(contains(text(), '已关注')) and not(contains(text(), '相互关注'))]"
-                            ]
-                            
-                            for button_selector in follow_button_selectors:
-                                follow_buttons = item.find_elements(By.XPATH, button_selector)
-                                if follow_buttons:
-                                    # 点击关注按钮
-                                    logger.info(f"在弹窗中点击关注用户: {username}")
-                                    follow_buttons[0].click()
-                                    self.random_sleep(1, 2)
+                        for btn in buttons:
+                            try:
+                                # 获取按钮文本 - 使用层级结构
+                                button_text = btn.find_element(By.XPATH, ".//div[string-length(text()) > 0]").text.strip()
+                                
+                                if "相互关注" in button_text:
+                                    follow_status = "mutual"
+                                    logger.info(f"检测到相互关注状态: {button_text}")
                                     break
+                                elif "已关注" in button_text:
+                                    follow_status = "following"
+                                    logger.info(f"检测到已关注状态: {button_text}")
+                                    break
+                                elif "关注" in button_text:
+                                    follow_button = btn
+                                    follow_status = "not_following"
+                                    logger.info(f"检测到未关注状态: {button_text}")
+                                    break
+                            except Exception as e:
+                                logger.debug(f"获取按钮文本失败: {str(e)}")
+                                continue
+                        
+                        # 如果不是互相关注,尝试关注
+                        if follow_status == "not_following" and follow_button:
+                            # 提取用户名 - 使用层级结构
+                            username = ""
+                            try:
+                                # 使用链接内的span层级获取用户名
+                                username_elements = item.find_elements(By.XPATH, ".//a[contains(@href, '/user/')]//span/span/span/span/span[string-length(text()) > 0]")
+                                if username_elements:
+                                    username = username_elements[0].text.strip()
+                                    logger.info(f"找到用户名: {username}")
+                            except Exception as e:
+                                logger.debug(f"提取用户名失败: {str(e)}")
+                                
+                            if not username:
+                                username = "未知用户"
+                                logger.warning("未能获取用户名,使用默认值")
+                                
+                            # 提取用户ID - 使用链接href
+                            user_id = None
+                            try:
+                                link_elements = item.find_elements(By.XPATH, ".//a[contains(@href, '/user/')]")
+                                if link_elements:
+                                    href = link_elements[0].get_attribute('href')
+                                    if href and '/user/' in href:
+                                        user_id = href.split('/user/')[-1].split('?')[0]
+                                        logger.info(f"从链接提取用户ID: {user_id}")
+                            except Exception as e:
+                                logger.warning(f"提取用户ID失败: {str(e)}")
+                                
+                            if not user_id:
+                                user_id = f"temp_{int(time.time())}_{random.randint(1000, 9999)}"
+                                logger.warning(f"未能获取用户ID,使用临时ID: {user_id}")
+                                
+                            # 点击关注按钮
+                            logger.info(f"准备关注用户: {username} ({user_id})")
+                            follow_button.click()
+                            self.random_sleep(2, 3)  # 增加等待时间
+                            
                     except Exception as e:
-                        logger.warning(f"处理弹窗中的用户项失败: {str(e)}")
+                        logger.warning(f"处理用户项失败: {str(e)}")
+                        continue
             else:
                 logger.warning("未在弹窗中找到任何用户项")
             
             # 关闭弹窗
             try:
-                # 尝试点击关闭按钮
+                # 使用DOM结构和按钮属性定位关闭按钮
                 close_button_selectors = [
-                    ".//button[contains(@class, 'close')]",
-                    ".//div[contains(@class, 'close')]",
-                    ".//span[contains(@class, 'close')]",
-                    ".//i[contains(@class, 'close')]",
-                    ".//button[contains(@aria-label, 'Close') or contains(@aria-label, '关闭')]"
+                    ".//button[@aria-label='Close']",  # 使用aria-label属性
+                    ".//button[contains(@class, 'semi-modal-close')]",  # 基于semi-modal结构
+                    ".//button[.//span[contains(text(), '取消')]]"  # 基于按钮文本
                 ]
                 
                 close_button_found = False
@@ -397,7 +184,7 @@ class FollowListManager:
                         self.random_sleep(1, 2)
                         break
                 
-                # 如果没有找到关闭按钮，尝试使用ESC键
+                # 如果没有找到关闭按钮,尝试使用ESC键
                 if not close_button_found:
                     logger.info("尝试使用ESC键关闭弹窗")
                     actions = ActionChains(self.driver)
@@ -627,16 +414,7 @@ class FollowListManager:
                 
                 # 根据截图中的类名定义更精确的选择器
                 popup_selectors = [
-                    "//div[contains(@class, 'i5YKH7Ag')]",  # 根据截图中的类名
-                    "//div[contains(@class, 'lg1KBICm k5PKYkwW GjZZha0A')]",  # 备用类名
-                    "//div[contains(@class, 'Qe0RD5K8')]",  # 备用类名
-                    "//div[contains(@class, 'FjupSA6k')]",  # 备用类名
                     "//div[@data-e2e='user-fans-container']",  # 使用data-e2e属性
-                    "//div[contains(@class, 'semi-tabs-content')]",  # 备用选择器
-                    "//div[contains(@class, 'semi-tabs-pane-active')]",  # 备用选择器
-                    "//div[contains(@class, 'semi-modal-content')]",
-                    "//div[contains(@class, 'semi-modal-wrapper')]",
-                    "//div[contains(@class, 'semi-modal')]"
                 ]
                 
                 for popup_selector in popup_selectors:
@@ -691,13 +469,14 @@ class FollowListManager:
                 # 获取关注列表
                 logger.info("获取关注列表...")
                 
-                # 根据截图中的HTML结构定义更精确的用户项选择器
+                # 使用HTML层级结构和语义化属性定义用户项选择器
                 user_item_selectors = [
-                    ".//div[@data-e2e='user-fans-container']//div[contains(@class, 'i5U4dMnB')]",  # 主要选择器
-                    ".//div[contains(@class, 'FjupSA6k')]//div[contains(@class, 'i5U4dMnB')]",  # 备用选择器
-                    ".//div[contains(@class, 'i5U4dMnB')]",  # 备用选择器
-                    ".//div[contains(@class, 'PETaiSYi')]",  # 备用选择器
-                    ".//div[contains(@class, 'X8ljGzft')]"  # 备用选择器
+                    # 基于data-e2e属性和DOM结构
+                    ".//div[@data-e2e='user-fans-container']/div/div[.//a[contains(@href, '/user/')] and .//button[@data-e2e='user-info-follow-btn']]",
+                    # 基于DOM层级和结构关系
+                    ".//div[.//a[contains(@href, '/user/')] and .//button[contains(@class, 'semi-button')] and .//div[contains(@class, 'avatar-component')]]",
+                    # 基于完整的DOM结构
+                    ".//div[.//span[@data-e2e='live-avatar'] and .//button[contains(@class, 'semi-button')]]"
                 ]
                 
                 # 选择最佳的用户项选择器
@@ -721,36 +500,32 @@ class FollowListManager:
                 # 处理找到的用户项
                 logger.info(f"使用选择器 {best_selector} 开始获取关注用户")
                 
-                # 用户名选择器
+                # 用户名选择器 - 基于DOM层级结构
                 username_selectors = [
-                    ".//div[contains(@class, 'kUKK9Qal')]//span",  # 主要选择器
-                    ".//div[contains(@class, 'arnSiSbK')]",  # 备用选择器
-                    ".//a[contains(@class, 'uz1VJwFY')]//span",  # 备用选择器
-                    ".//p[contains(@class, 'kUKK9Qal')]",
-                    ".//p[contains(@class, 'arnSiSbK')]",
-                    ".//span[contains(@class, 'uz1VJwFY')]",
-                    ".//span[contains(@class, 'nickname')]",
-                    ".//span[contains(@class, 'title')]"
+                    # 基于data-e2e属性和DOM层级
+                    ".//a[contains(@href, '/user/')]//span[@data-e2e='user-name']",
+                    # 基于DOM层级结构
+                    ".//a[contains(@href, '/user/')]//span[not(@role) and string-length(text()) > 0]",
+                    # 基于avatar和用户名的关系
+                    ".//span[@data-e2e='live-avatar']/following-sibling::div//a[contains(@href, '/user/')]//span[string-length(text()) > 0]"
                 ]
                 
-                # 关注状态选择器
+                # 关注状态选择器 - 基于data-e2e属性和DOM结构
                 follow_status_selectors = [
-                    ".//div[contains(@class, 'zPZJ3j40')]",  # 主要选择器
-                    ".//button[contains(@class, 'xjIRvxqr')]//div",  # 备用选择器
-                    ".//button[contains(@class, 'xjIRvxqr')]",  # 按钮本身
-                    ".//div[contains(@class, 'semi-button-content')]",  # 按钮内容
-                    ".//div[contains(@class, 'semi-button')]",  # 通用按钮类
-                    ".//div[contains(@class, 'follow-button')]",  # 关注按钮
-                    ".//div[contains(@class, 'follow-state')]",  # 关注状态
-                    ".//button[contains(@class, 'zPZJ3j40')]",
-                    ".//button[contains(@class, 'xjIRvxqr')]",
-                    ".//button[contains(@class, 'follow-button')]",
-                    ".//div[contains(@class, 'follow-status')]"
+                    # 基于data-e2e属性
+                    ".//button[@data-e2e='user-info-follow-btn']",
+                    # 基于semi-button组件结构
+                    ".//button[contains(@class, 'semi-button')]//div[contains(@class, 'semi-button-content')]",
+                    # 基于按钮和文本的层级关系
+                    ".//button[contains(@class, 'semi-button')]//div[string-length(text()) > 0]"
                 ]
                 
-                # 用户ID选择器
+                # 用户ID选择器 - 基于href属性
                 user_id_selectors = [
-                    ".//a[contains(@href, '/user/')]",  # 用户链接
+                    # 从用户链接中提取ID
+                    ".//a[contains(@href, '/user/')]",
+                    # 从头像链接中提取ID
+                    ".//span[@data-e2e='live-avatar']/parent::a[contains(@href, '/user/')]"
                 ]
                 
                 # 存储关注用户信息
@@ -764,7 +539,7 @@ class FollowListManager:
                 
                 for scroll_attempt in range(max_scroll_attempts):
                     # 获取当前加载的用户项
-                    user_items = self.driver.find_elements(By.XPATH, best_selector)
+                    user_items = popup_element.find_elements(By.XPATH, best_selector)
                     current_user_count = len(user_items)
                     
                     logger.info(f"当前已加载 {current_user_count} 个关注用户项")
@@ -804,40 +579,35 @@ class FollowListManager:
                             try:
                                 follow_buttons = user_item.find_elements(By.XPATH, selector)
                                 if follow_buttons:
-                                    for btn_index in range(len(follow_buttons)):
+                                    for btn in follow_buttons:
                                         try:
-                                            button = follow_buttons[btn_index]
-                                            button_class = button.get_attribute("class")
-                                            button_text = button.text.strip()
-                                            
-                                            # 根据按钮类名或文本判断关注状态
+                                            button_text = btn.text.strip()
+                                            # 根据按钮文本判断关注状态
                                             if "相互关注" in button_text:
-                                                follow_status = "相互关注"
+                                                follow_status = "mutual"
                                                 break
-                                            elif "following" in button_class.lower() or "已关注" in button_text:
-                                                follow_status = "已关注"
+                                            elif "已关注" in button_text:
+                                                follow_status = "following"
+                                                break
+                                            elif "关注" in button_text:
+                                                follow_status = "not_following"
                                                 break
                                         except Exception as e:
-                                            logger.debug(f"检查按钮 {btn_index} 失败: {str(e)}")
+                                            logger.debug(f"获取按钮文本失败: {str(e)}")
                                             continue
+                                if follow_status:
+                                    break
                             except Exception as e:
-                                logger.debug(f"获取按钮列表失败: {str(e)}")
+                                logger.debug(f"使用选择器 {selector} 获取关注状态失败: {str(e)}")
                         
-                        # 简化后续检查，直接默认为已关注
+                        # 如果状态未确定,默认为已关注
                         if not follow_status:
-                            # 在关注列表中的用户默认为已关注状态
-                            follow_status = "已关注"
-                            logger.info(f"用户 {username} 的关注状态无法确定，默认为'已关注'")
+                            follow_status = "following"
+                            logger.info(f"用户 {username} 的关注状态无法确定,默认为'following'")
                         
-                        # 提取用户ID - 限制尝试次数
-                        user_id = ""
-                        max_id_attempts = 2
-                        id_attempts = 0
-                        
+                        # 提取用户ID
+                        user_id = None
                         for selector in user_id_selectors:
-                            if id_attempts >= max_id_attempts:
-                                break
-                                
                             try:
                                 link_elements = user_item.find_elements(By.XPATH, selector)
                                 if link_elements:
@@ -847,10 +617,10 @@ class FollowListManager:
                                         break
                             except Exception as e:
                                 logger.debug(f"使用选择器 {selector} 获取用户ID失败: {str(e)}")
-                            
-                            id_attempts += 1
                         
-                        logger.info(f"用户 {username} 的关注状态: {follow_status}")
+                        if not user_id:
+                            user_id = f"temp_{int(time.time())}_{random.randint(1000, 9999)}"
+                            logger.warning(f"无法获取用户ID,使用临时ID: {user_id}")
                         
                         # 添加到关注列表
                         follow_items.append({
@@ -858,6 +628,8 @@ class FollowListManager:
                             "status": follow_status,
                             "user_id": user_id
                         })
+                        
+                        logger.info(f"处理用户: {username} ({user_id}), 关注状态: {follow_status}")
                     
                     # 检查是否需要继续滚动
                     if current_user_count == last_user_count:
@@ -877,8 +649,8 @@ class FollowListManager:
                     if current_user_count > 0:
                         try:
                             last_user = user_items[current_user_count - 1]
-                            self.driver.execute_script("arguments[0].scrollIntoView();", last_user)
-                            time.sleep(1)  # 等待加载
+                            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", last_user)
+                            time.sleep(2)  # 增加等待时间确保加载
                         except Exception as e:
                             logger.warning(f"滚动加载更多用户失败: {str(e)}")
                     
@@ -1011,6 +783,46 @@ class FollowListManager:
                         non_mutual_follows = sum(1 for item in follow_items if "相互关注" not in item['status'] and "已关注" in item['status'])
                         
                         logger.info(f"关注列表统计: 总关注 {total_follows}, 互相关注 {mutual_follows}, 未回关 {non_mutual_follows}")
+
+                        # 保存所有用户信息到数据库
+                        saved_count = 0
+                        updated_count = 0
+                        for item in follow_items:
+                            try:
+                                if not item['user_id']:
+                                    logger.warning(f"跳过保存用户 {item['username']}: 无效的用户ID")
+                                    continue
+                                    
+                                # 检查用户是否已存在
+                                try:
+                                    user_exists = self.db.is_user_exists(item['user_id'])
+                                except Exception as e:
+                                    logger.error(f"检查用户是否存在失败: {item['username']} ({item['user_id']}), 错误: {str(e)}")
+                                    continue
+                                
+                                # 根据关注状态设置from_fan参数
+                                from_fan = 1 if "相互关注" in item['status'] else 0
+                                
+                                if not user_exists:
+                                    # 新用户，添加到数据库
+                                    try:
+                                        self.db.add_follow_record(item['user_id'], item['username'], from_fan)
+                                        saved_count += 1
+                                        logger.info(f"新增用户到数据库: {item['username']} ({item['user_id']})")
+                                    except Exception as e:
+                                        logger.error(f"保存新用户失败: {item['username']}, 错误: {str(e)}")
+                                else:
+                                    # 已存在的用户，更新状态
+                                    try:
+                                        self.db.update_follow_status(item['user_id'], from_fan)
+                                        updated_count += 1
+                                        logger.info(f"更新用户关注状态: {item['username']} ({item['user_id']})")
+                                    except Exception as e:
+                                        logger.error(f"更新用户状态失败: {item['username']}, 错误: {str(e)}")
+                            except Exception as e:
+                                logger.error(f"处理用户信息失败: {item['username']}, 错误: {str(e)}")
+                                
+                        logger.info(f"数据库操作统计: 新增 {saved_count} 个用户, 更新 {updated_count} 个用户")
                         
                         # 找出未回关的用户 - 修改判断逻辑，只有明确标记为"已关注"的才算未回关，排除状态无法确定的用户
                         non_mutual_users = [item for item in follow_items if "相互关注" not in item['status'] and "已关注" in item['status']]
@@ -1028,11 +840,26 @@ class FollowListManager:
                                 
                                 for user in batch:
                                     try:
-                                        if user['user_id']:  # 确保有用户ID
-                                            # 获取取关天数阈值
-                                            unfollow_days = self.config.get('operation', {}).get('follow_list_tasks', {}).get('unfollow_days', 3)
-                                            if self.db.mark_user_for_unfollow(user['user_id'], user['username'], unfollow_days):
-                                                marked_count += 1
+                                        if not user['user_id']:
+                                            logger.warning(f"跳过标记用户 {user['username']}: 无效的用户ID")
+                                            continue
+                                            
+                                        # 检查用户是否已存在
+                                        try:
+                                            user_exists = self.db.is_user_exists(user['user_id'])
+                                        except Exception as e:
+                                            logger.error(f"检查用户是否存在失败: {user['username']} ({user['user_id']}), 错误: {str(e)}")
+                                            continue
+                                            
+                                        if not user_exists:
+                                            logger.warning(f"跳过标记用户 {user['username']}: 用户不存在于数据库")
+                                            continue
+                                            
+                                        # 获取取关天数阈值
+                                        unfollow_days = self.config.get('operation', {}).get('follow_list_tasks', {}).get('unfollow_days', 3)
+                                        if self.db.mark_user_for_unfollow(user['user_id'], user['username'], unfollow_days):
+                                            marked_count += 1
+                                            logger.info(f"标记用户为待取关: {user['username']} ({user['user_id']})")
                                     except Exception as e:
                                         logger.error(f"标记用户为待取关失败: {user['username']}, 错误: {str(e)}")
                                 
@@ -1046,81 +873,6 @@ class FollowListManager:
                     except Exception as e:
                         logger.error(f"处理关注用户数据时出错: {str(e)}")
                     
-                    # 关闭弹窗
-                    try:
-                        logger.info("尝试关闭关注列表弹窗...")
-                        
-                        # 直接使用JavaScript精确定位并点击关闭按钮，这是最有效的方法
-                        self.driver.execute_script("""
-                            // 通过类名精确定位关闭按钮
-                            var closeButtons = document.getElementsByClassName('KArYflhI');
-                            if (closeButtons && closeButtons.length > 0) {
-                                closeButtons[0].click();
-                                return true;
-                            }
-                            
-                            // 通过SVG类名定位
-                            var svgButtons = document.getElementsByClassName('xlWtWI6P');
-                            if (svgButtons && svgButtons.length > 0) {
-                                svgButtons[0].parentNode.click();
-                                return true;
-                            }
-                            
-                            return false;
-                        """)
-                        
-                        time.sleep(1)  # 等待关闭动画
-                        logger.info("通过JavaScript精确定位并点击关闭按钮")
-                        
-                        # 验证弹窗是否已关闭
-                        popup_still_exists = False
-                        try:
-                            # 检查弹窗是否仍然存在
-                            for popup_selector in popup_selectors:
-                                try:
-                                    popup_elements = self.driver.find_elements(By.XPATH, popup_selector)
-                                    if popup_elements and popup_elements[0].is_displayed():
-                                        popup_still_exists = True
-                                        break
-                                except:
-                                    continue
-                            
-                            if popup_still_exists:
-                                # 如果弹窗仍然存在，尝试按ESC键关闭
-                                logger.warning("JavaScript点击后弹窗仍然存在，尝试按ESC键关闭")
-                                actions = ActionChains(self.driver)
-                                actions.send_keys(Keys.ESCAPE).perform()
-                                time.sleep(1)
-                                
-                                # 再次检查弹窗是否仍然存在
-                                popup_still_exists = False
-                                for popup_selector in popup_selectors:
-                                    try:
-                                        popup_elements = self.driver.find_elements(By.XPATH, popup_selector)
-                                        if popup_elements and popup_elements[0].is_displayed():
-                                            popup_still_exists = True
-                                            break
-                                    except:
-                                        continue
-                                
-                                # 最后尝试刷新页面
-                                if popup_still_exists:
-                                    logger.warning("所有方法都无法关闭弹窗，尝试刷新页面")
-                                    self.driver.refresh()
-                                    time.sleep(2)
-                            else:
-                                logger.info("已关闭关注列表弹窗")
-                        except Exception as e:
-                            logger.warning(f"验证弹窗关闭状态时出错: {str(e)}")
-                    except Exception as e:
-                        logger.warning(f"关闭关注列表弹窗失败: {str(e)}")
-                        # 最后尝试刷新页面
-                        try:
-                            self.driver.refresh()
-                            time.sleep(2)
-                            logger.info("通过刷新页面关闭弹窗")
-                        except:
-                            logger.warning("刷新页面失败")
                     
                     # 任务完成后休息一段时间，避免频繁执行
                     task_interval = self.config.get('task', {}).get('check_follows_interval', 3600)  # 默认1小时

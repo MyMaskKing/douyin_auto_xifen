@@ -101,6 +101,81 @@ class MessageManager:
             logger.error(f"获取消息模板失败: {str(e)}")
             return None
     
+    def check_message_sent(self, message: str) -> bool:
+        """
+        检查消息是否发送成功
+        
+        参数:
+            message: 要检查的消息内容
+            
+        返回:
+            bool: 消息是否发送成功
+        """
+        try:
+            # 获取消息预览文本(用于日志)
+            message_preview = message[:20] if len(message) > 20 else message
+            message_found = False
+            
+            # 尝试多次检查消息是否出现
+            max_retries = 3
+            for retry in range(max_retries):
+                logger.info(f"第 {retry + 1} 次检查消息是否发送成功...")
+                retry_start_time = time.time()
+                
+                try:
+                    # 获取messageContent元素
+                    message_content = self.driver.find_element(By.ID, "messageContent")
+                    if not message_content:
+                        logger.warning("未找到messageContent元素")
+                        continue
+                        
+                    # 获取所有pre标签中的文本内容
+                    pre_elements = message_content.find_elements(By.TAG_NAME, "pre")
+                    if not pre_elements:
+                        logger.warning("未找到消息内容元素")
+                        continue
+                        
+                    # 检查每个pre标签中的文本
+                    for pre in pre_elements:
+                        content = pre.text
+                        if not content:
+                            continue
+                            
+                        # 检查消息是否在文本内容中
+                        if message in content:
+                            message_found = True
+                            logger.info(f"在聊天窗口中找到发送的消息内容: {message_preview}...")
+                            break
+                            
+                        # 检查是否有发送失败提示
+                        failure_texts = ["发送失败", "请求频繁", "操作太频繁", "稍后再试"]
+                        for text in failure_texts:
+                            if text in content:
+                                logger.warning(f"检测到发送失败提示: {text}")
+                                return False
+                                
+                    if message_found:
+                        break
+                    
+                except Exception as e:
+                    logger.debug(f"获取消息内容失败: {str(e)}")
+                    continue
+                
+                if message_found:
+                    logger.info(f"消息发送成功确认，本次检查耗时: {time.time() - retry_start_time:.2f}秒")
+                    break
+                    
+                if retry < max_retries - 1:
+                    wait_time = random.uniform(3, 5)
+                    logger.info(f"未找到消息内容，等待 {wait_time:.2f} 秒后进行第 {retry + 2} 次检查...")
+                    time.sleep(wait_time)
+                
+            return message_found
+            
+        except Exception as e:
+            logger.error(f"检查消息发送状态时出错: {str(e)}")
+            return False
+
     def send_message(self, user_id: str, username: str, days_since_follow: int) -> bool:
         """
         发送私信给指定用户
@@ -225,13 +300,37 @@ class MessageManager:
                 "//div[contains(@class, 'im-richtext-container')]//div[@contenteditable='true']"
             ]
             
-            for selector in message_input_selectors:
+            # 增加重试次数
+            max_input_retries = 3
+            for input_retry in range(max_input_retries):
                 try:
-                    message_input = self.driver.find_element(By.XPATH, selector)
-                    logger.info(f"找到私信输入框: {selector}")
-                    break
-                except:
-                    continue
+                    # 等待私信对话框完全加载
+                    wait_time = random.uniform(2, 3)
+                    logger.info(f"等待私信对话框加载, 等待时长: {wait_time:.2f}秒")
+                    time.sleep(wait_time)
+                    
+                    # 尝试查找输入框
+                    for selector in message_input_selectors:
+                        try:
+                            # 使用显式等待
+                            message_input = self.wait.until(
+                                EC.presence_of_element_located((By.XPATH, selector))
+                            )
+                            if message_input and message_input.is_displayed() and message_input.is_enabled():
+                                logger.info(f"找到可用的私信输入框: {selector}")
+                                break
+                        except:
+                            continue
+                        
+                    if message_input:
+                        break
+                    
+                    logger.warning(f"第 {input_retry + 1} 次尝试未找到可用的私信输入框")
+                    
+                except Exception as e:
+                    logger.warning(f"第 {input_retry + 1} 次查找私信输入框失败: {str(e)}")
+                    if input_retry < max_input_retries - 1:
+                        continue
             
             if not message_input:
                 logger.warning(f"未找到私信输入框: {username} ({user_id})")
@@ -241,13 +340,25 @@ class MessageManager:
             logger.info(f"输入私信内容: {message}")
             try:
                 # 先点击输入框激活它
-                message_input.click()
+                try:
+                    # 使用JavaScript点击
+                    self.driver.execute_script("arguments[0].click();", message_input)
+                except:
+                    # 如果JavaScript点击失败,尝试普通点击
+                    message_input.click()
+                
                 wait_time = random.uniform(1, 2)
                 logger.info(f"点击输入框后随机等待时长: {wait_time:.2f}秒")
                 self.random_sleep(1, 2)
                 
                 # 清空输入框
-                message_input.clear()
+                try:
+                    message_input.clear()
+                except:
+                    # 如果普通清空失败,使用Ctrl+A和Delete键
+                    message_input.send_keys(Keys.CONTROL + "a")
+                    message_input.send_keys(Keys.DELETE)
+                
                 wait_time = random.uniform(0.5, 1)
                 logger.info(f"清空输入框后随机等待时长: {wait_time:.2f}秒")
                 self.random_sleep(0.5, 1)
@@ -262,6 +373,7 @@ class MessageManager:
                 wait_time = random.uniform(1, 2)
                 logger.info(f"输入完成后随机等待时长: {wait_time:.2f}秒")
                 self.random_sleep(1, 2)
+                
             except Exception as e:
                 logger.error(f"输入私信内容失败: {str(e)}")
                 return False
@@ -269,46 +381,64 @@ class MessageManager:
             # 查找发送按钮
             send_button = None
             send_button_selectors = [
-                "//span[contains(@class, 'PygT7Ced') and contains(@class, 'JnY63Rbk') and contains(@class, 'e2e-send-msg-btn')]",
-                "//span[contains(@class, 'PygT7Ced')]//svg",
+                # 使用e2e-send-msg-btn功能类名
                 "//span[contains(@class, 'e2e-send-msg-btn')]"
             ]
             
+            # 先点击输入框以激活发送按钮
+            try:
+                logger.info("尝试点击输入框以激活发送按钮...")
+                message_input.click()
+                wait_time = random.uniform(1, 2)
+                logger.info(f"点击输入框后等待: {wait_time:.2f}秒")
+                time.sleep(wait_time)
+            except Exception as e:
+                logger.warning(f"点击输入框失败: {str(e)}")
+            
             for selector in send_button_selectors:
                 try:
-                    send_button = self.driver.find_element(By.XPATH, selector)
-                    logger.info(f"找到发送按钮: {selector}")
-                    break
-                except:
+                    elements = self.driver.find_elements(By.XPATH, selector)
+                    for element in elements:
+                        if element.is_displayed() and element.is_enabled():
+                            send_button = element
+                            logger.info(f"找到可用的发送按钮: {selector}")
+                            break
+                    if send_button:
+                        break
+                except Exception as e:
                     continue
             
             if send_button:
                 # 点击发送按钮
-                logger.info("点击发送按钮")
+                logger.info("开始点击发送按钮")
+                start_time = time.time()
                 try:
-                    # 尝试直接点击
+                    # 直接点击发送按钮
                     send_button.click()
-                    wait_time = random.uniform(2, 3)
-                    logger.info(f"点击发送按钮后随机等待时长: {wait_time:.2f}秒")
-                    self.random_sleep(2, 3)
-                except:
-                    try:
-                        # 如果直接点击失败，尝试点击父元素
-                        parent = send_button.find_element(By.XPATH, "..")
-                        parent.click()
-                        wait_time = random.uniform(2, 3)
-                        logger.info(f"点击发送按钮父元素后随机等待时长: {wait_time:.2f}秒")
-                        self.random_sleep(2, 3)
-                    except:
-                        # 如果点击父元素也失败，尝试使用JavaScript点击
-                        try:
-                            self.driver.execute_script("arguments[0].click();", send_button)
-                            wait_time = random.uniform(2, 3)
-                            logger.info(f"使用JavaScript点击发送按钮后随机等待时长: {wait_time:.2f}秒")
-                            self.random_sleep(2, 3)
-                        except Exception as e:
-                            logger.error(f"点击发送按钮失败: {str(e)}")
-                            return False
+                    click_time = time.time()
+                    logger.info(f"发送按钮点击完成，耗时: {click_time - start_time:.2f}秒")
+                    
+                    wait_time = random.uniform(5, 8)
+                    logger.info(f"开始等待消息发送完成，计划等待时长: {wait_time:.2f}秒")
+                    time.sleep(wait_time)
+                    
+                    actual_wait_time = time.time() - click_time
+                    logger.info(f"消息发送等待完成，实际等待时长: {actual_wait_time:.2f}秒")
+                    
+                    # 检查消息是否发送成功
+                    if self.check_message_sent(message):
+                        total_time = time.time() - start_time
+                        logger.info(f"消息发送全流程完成，总耗时: {total_time:.2f}秒")
+                        self.db.add_message_record(user_id, message)
+                        return True
+                    else:
+                        logger.warning(f"发送私信失败,标记用户 {username} ({user_id}) 今天不再发送私信")
+                        self.db.mark_user_message_failed(user_id, days_since_follow + 1)
+                        return False
+                    
+                except Exception as e:
+                    logger.error(f"发送消息过程出错，耗时: {time.time() - start_time:.2f}秒，错误: {str(e)}")
+                    return False
             else:
                 # 如果没有找到发送按钮，尝试按回车键发送
                 logger.info("未找到发送按钮，尝试按回车键发送")
@@ -317,148 +447,15 @@ class MessageManager:
                 logger.info(f"按回车键发送后随机等待时长: {wait_time:.2f}秒")
                 self.random_sleep(2, 3)
             
-            # 检查是否发送成功
-            try:
-                # 等待消息内容出现在聊天窗口中
-                message_content_selectors = [
-                    "//div[@id='messageContent']//div[contains(@class, 'iraLLg20')]//span[contains(@class, 'WCSQFekt')]//pre[contains(text(), '{}')]",
-                    "//div[@id='messageContent']//div[contains(@class, 'SWIwJC_8')]//span[contains(@class, 'WCSQFekt')]//pre[contains(text(), '{}')]",
-                    "//div[@id='messageContent']//div[contains(@class, 'gdUUraP7')][contains(text(), '{}')]",
-                    "//div[contains(@class, 'iraLLg20')]//span[contains(@class, 'WCSQFekt')]//pre[contains(text(), '{}')]",
-                    "//div[contains(@class, 'SWIwJC_8')]//span[contains(@class, 'WCSQFekt')]//pre[contains(text(), '{}')]",
-                    "//div[contains(@class, 'gdUUraP7')][contains(text(), '{}')]",
-                    "//div[contains(@class, 'message-content')]//div[contains(text(), '{}')]",
-                    "//div[contains(@class, 'message-item')]//div[contains(text(), '{}')]"
-                ]
-                
-                # 检查消息是否出现在聊天窗口中
-                message_found = False
-                for selector in message_content_selectors:
-                    try:
-                        # 使用消息内容的前20个字符进行匹配，避免特殊字符问题
-                        message_preview = message[:20] if len(message) > 20 else message
-                        formatted_selector = selector.format(message_preview)
-                        self.wait.until(EC.presence_of_element_located((By.XPATH, formatted_selector)))
-                        message_found = True
-                        logger.info(f"在聊天窗口中找到发送的消息内容: {message_preview}...")
-                        break
-                    except:
-                        continue
-                
-                # 检查是否有发送失败的提示
-                failure_indicators = [
-                    "//div[@id='messageContent']//div[contains(@class, 'kuMUXQBL')]//span[contains(@class, 'uM5tWLIj')][contains(text(), '发送失败')]",
-                    "//div[contains(@class, 'kuMUXQBL')]//span[contains(@class, 'uM5tWLIj')][contains(text(), '发送失败')]",
-                    "//div[@id='messageContent']//div[contains(text(), '发送失败')]",
-                    "//div[@id='messageContent']//div[contains(text(), '请求频繁')]",
-                    "//div[@id='messageContent']//div[contains(text(), '操作太频繁')]",
-                    "//div[@id='messageContent']//div[contains(text(), '稍后再试')]",
-                    "//div[contains(text(), '发送失败')]",
-                    "//div[contains(text(), '请求频繁')]",
-                    "//div[contains(text(), '操作太频繁')]",
-                    "//div[contains(text(), '稍后再试')]",
-                    "//div[contains(@class, 'error-message')]",
-                    "//div[contains(@class, 'toast-error')]"
-                ]
-                
-                failure_found = False
-                for selector in failure_indicators:
-                    if len(self.driver.find_elements(By.XPATH, selector)) > 0:
-                        failure_found = True
-                        logger.warning(f"检测到发送失败提示: {selector}")
-                        break
-                
-                if message_found and not failure_found:
+                # 使用相同的检查逻辑
+                if self.check_message_sent(message):
                     logger.info(f"成功发送私信给用户: {username} ({user_id})")
-                    
-                    # 记录私信历史
                     self.db.add_message_record(user_id, message)
-                    
                     return True
-                elif failure_found:
-                    # 获取重试等待时间
-                    retry_wait_time = self.config.get('operation', {}).get('fan_list_tasks', {}).get('message_retry_wait', 300)  # 默认5分钟
-                    
-                    logger.warning(f"发送私信失败，等待 {retry_wait_time} 秒后重试...")
-                    time.sleep(retry_wait_time)
-                    logger.info(f"重试等待完成，已等待 {retry_wait_time} 秒")
-                    
-                    # 重新尝试发送
-                    logger.info(f"重新尝试发送私信给用户: {username} ({user_id})")
-                    
-                    # 清空输入框并重新输入
-                    message_input = self.driver.find_element(By.XPATH, "//div[contains(@class, 'public-DraftEditor-content')]")
-                    message_input.clear()
-                    wait_time = random.uniform(0.5, 1)
-                    logger.info(f"重试时清空输入框后随机等待时长: {wait_time:.2f}秒")
-                    self.random_sleep(0.5, 1)
-                    
-                    # 模拟人工输入
-                    for char in message:
-                        message_input.send_keys(char)
-                        char_wait_time = random.uniform(0.05, 0.15)
-                        time.sleep(char_wait_time)
-                    
-                    wait_time = random.uniform(1, 2)
-                    logger.info(f"重试时输入完成后随机等待时长: {wait_time:.2f}秒")
-                    self.random_sleep(1, 2)
-                    
-                    # 再次点击发送按钮
-                    send_button = self.driver.find_element(By.XPATH, "//span[contains(@class, 'e2e-send-msg-btn')]")
-                    send_button.click()
-                    wait_time = random.uniform(2, 3)
-                    logger.info(f"重试时点击发送按钮后随机等待时长: {wait_time:.2f}秒")
-                    self.random_sleep(2, 3)
-                    
-                    # 再次检查是否发送成功
-                    message_found = False
-                    for selector in message_content_selectors:
-                        try:
-                            message_preview = message[:20] if len(message) > 20 else message
-                            formatted_selector = selector.format(message_preview)
-                            self.wait.until(EC.presence_of_element_located((By.XPATH, formatted_selector)))
-                            message_found = True
-                            break
-                        except:
-                            continue
-                    
-                    failure_found = False
-                    for selector in failure_indicators:
-                        if len(self.driver.find_elements(By.XPATH, selector)) > 0:
-                            failure_found = True
-                            break
-                    
-                    if message_found and not failure_found:
-                        logger.info(f"重试成功，已发送私信给用户: {username} ({user_id})")
-                        
-                        # 记录私信历史
-                        self.db.add_message_record(user_id, message)
-                        
-                        return True
-                    else:
-                        logger.error(f"重试失败，标记用户 {username} ({user_id}) 今天不再发送私信")
-                        
-                        # 标记用户今天不再发送私信，将今天的发信次数延后一天
-                        self.db.mark_user_message_failed(user_id, days_since_follow + 1)
-                        
-                        return False
-                
-            except Exception as e:
-                logger.warning(f"无法确认私信是否发送成功: {str(e)}")
-                # 再次检查按钮状态
-                try:
-                    time.sleep(2)
-                    # 如果找到了灰色状态的按钮，说明发送成功
-                    if len(self.driver.find_elements(By.XPATH, "//span[contains(@class, 'sCp7KhBv') and contains(@class, 'e2e-send-msg-btn') and not(contains(@class, 'EWT1TDgs'))]")) > 0:
-                        logger.info(f"通过按钮状态确认私信发送成功: {username} ({user_id})")
-                        
-                        # 记录私信历史
-                        self.db.add_message_record(user_id, message)
-                        
-                        return True
-                except:
-                    pass
-                return False
+                else:
+                    logger.warning(f"发送私信失败,标记用户 {username} ({user_id}) 今天不再发送私信")
+                    self.db.mark_user_message_failed(user_id, days_since_follow + 1)
+                    return False
                 
         except Exception as e:
             logger.error(f"发送私信失败: {str(e)}")
