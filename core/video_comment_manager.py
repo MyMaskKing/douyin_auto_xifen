@@ -74,108 +74,27 @@ class VideoCommentManager:
             # 保存页面截图
             save_screenshot(self.driver, "video_comment", level="NORMAL")
             
-            # 2. 点击评论按钮并发送评论
-            comment_text = "新人涨粉，互关必回"
-        
-            # 查找评论输入框
+            # 2. 等待评论列表加载
             try:
-                # 等待评论输入框容器加载
-                comment_container = self.wait.until(
-                    EC.presence_of_element_located((By.CLASS_NAME, "comment-input-inner-container"))
+                self.wait.until(
+                    EC.presence_of_element_located((By.XPATH, "//div[@data-e2e='comment-list']"))
                 )
-                
-                # 点击输入框激活它
-                comment_container.click()
-                self.random_sleep(1, 2)
-                
-                # 找到实际的输入区域
-                editor = self.wait.until(
-                    EC.presence_of_element_located((By.CLASS_NAME, "public-DraftEditor-content"))
-                )
-                
-                # 模拟真实的键盘输入
-                # 先清空输入框
-                editor.clear()
-                self.random_sleep(0.5, 1)
-                
-                # 逐个字符输入，模拟真实打字
-                for char in comment_text:
-                    editor.send_keys(char)
-                    self.random_sleep(0.1, 0.3)  # 每个字符之间添加随机延迟
-                
-                logger.info("找到评论输入框并输入内容")
-                self.random_sleep(1, 2)
+                self.random_sleep(2, 3)
             except Exception as e:
-                logger.error(f"未找到评论输入框或输入失败: {str(e)}")
-                save_screenshot(self.driver, "comment_input_error")
+                logger.error(f"评论列表加载失败: {str(e)}")
                 return False
             
-            # 查找发送按钮
-            try:
-                # 等待发送按钮出现并且可点击
-                send_button = self.wait.until(
-                    EC.element_to_be_clickable((By.CLASS_NAME, "NUzvFSPe"))
-                )
-                
-                # 使用JavaScript点击按钮
-                self.driver.execute_script("arguments[0].click();", send_button)
-                logger.info("点击发送按钮")
-                self.random_sleep(2, 3)
-                
-                # 检查是否出现验证码或其他异常
-                try:
-                    # 等待发送按钮消失，确认发送成功
-                    self.wait.until_not(
-                        EC.presence_of_element_located((By.CLASS_NAME, "NUzvFSPe"))
-                    )
-                    logger.info("评论发送成功")
-                except:
-                    logger.warning("评论发送状态未知，可能需要人工验证")
-                    save_screenshot(self.driver, "comment_send_status")
-                    
-                    # 等待用户确认
-                    user_input = input("请检查评论是否发送成功，如果需要验证码请完成验证。是否继续？(y/n): ")
-                    if user_input.lower() != 'y':
-                        logger.info("用户选择终止当前视频的处理")
-                        return False
-                    else:
-                        logger.info("用户确认继续执行")
-                
-            except Exception as e:
-                logger.warning(f"发送评论遇到异常: {str(e)}")
-                save_screenshot(self.driver, "send_comment_error")
-                
-                # 等待用户确认
-                user_input = input("发送评论遇到问题，是否重试？(y/n): ")
-                if user_input.lower() != 'y':
-                    logger.info("用户选择终止当前视频的处理")
-                    return False
-                else:
-                    logger.info("用户选择重试")
-                    # 重新尝试发送评论
-                    try:
-                        send_button = self.wait.until(
-                            EC.element_to_be_clickable((By.CLASS_NAME, "NUzvFSPe"))
-                        )
-                        self.driver.execute_script("arguments[0].click();", send_button)
-                        logger.info("重新尝试点击发送按钮")
-                    except:
-                        logger.error("重试发送评论失败")
-                        return False
-            
             # 3. 提取评论用户
-            max_extract = self.config.get('operation', {}).get('video_tasks', {}).get('max_follow_per_video', 20)  # 从配置中获取每个视频最多提取的评论数
+            max_extract = self.config.get('operation', {}).get('video_tasks', {}).get('max_follow_per_video', 20)
             extracted_users = 0
             scroll_count = 0
-            processed_users = set()  # 用于去重
-            no_new_data_count = 0  # 连续无新数据的次数
-            
-            # 获取配置中的最小提取用户数
+            processed_users = set()
+            no_new_data_count = 0
             min_extract_users = self.config.get('operation', {}).get('video_tasks', {}).get('min_extract_users_per_video', 5)
             
             while extracted_users < max_extract and no_new_data_count < 5:
                 # 记录当前评论数量
-                current_comments = len(self.driver.find_elements(By.XPATH, "//div[contains(@class, 'comment-item')]"))
+                current_comments = len(self.driver.find_elements(By.XPATH, "//div[@data-e2e='comment-list']//div[@data-e2e='comment-item']"))
                 
                 # 滚动加载更多评论
                 logger.info(f"滚动加载更多评论 ({scroll_count+1})")
@@ -261,99 +180,80 @@ class VideoCommentManager:
                 self.random_sleep(2, 3)
                 
                 # 检查是否有新评论加载
-                new_comments = len(self.driver.find_elements(By.XPATH, "//div[contains(@class, 'comment-item')]"))
+                new_comments = len(self.driver.find_elements(By.XPATH, "//div[@data-e2e='comment-list']//div[@data-e2e='comment-item']"))
                 
-                # 如果评论数量没有增加，增加无数据计数
                 if new_comments <= current_comments:
                     no_new_data_count += 1
                     logger.info(f"未检测到新评论，连续 {no_new_data_count}/5 次")
                 else:
-                    no_new_data_count = 0  # 有新数据，重置计数
+                    no_new_data_count = 0
                     logger.info(f"检测到 {new_comments - current_comments} 条新评论")
                     
-                    # 处理当前页面上的评论用户
-                    comment_elements = self.driver.find_elements(By.XPATH, "//div[contains(@class, 'comment-item')]")
+                    # 处理新加载的评论用户
+                    comment_elements = self.driver.find_elements(By.XPATH, "//div[@data-e2e='comment-list']//div[@data-e2e='comment-item']")
                     
                     if not comment_elements:
                         logger.warning("未找到评论元素")
                         continue
                     
                     # 只处理新加载的评论
-                    for comment_element in comment_elements[current_comments:]:
+                    for comment_element in comment_elements[current_comments:new_comments]:
                         try:
-                            # 提取用户ID和用户名
-                            user_id = None
-                            username = None
-                            
-                            # 尝试获取用户链接和ID
-                            try:
-                                user_link = comment_element.find_element(By.XPATH, ".//a[contains(@href, '/user/')]")
-                                if user_link:
-                                    user_href = user_link.get_attribute("href")
-                                    if user_href and "/user/" in user_href:
-                                        user_id = user_href.split("/user/")[1].split("?")[0]
-                                        if not user_id:
-                                            logger.warning("提取到的用户ID为空")
-                                            continue
-                                    else:
-                                        logger.warning("用户链接格式不正确")
-                                        continue
-                            except Exception as e:
-                                logger.warning(f"提取用户ID失败: {str(e)}")
+                            # 提取用户链接和ID
+                            user_link = comment_element.find_element(By.XPATH, ".//a[contains(@href, '/user/')]")
+                            if not user_link:
+                                continue
+                                
+                            user_href = user_link.get_attribute("href")
+                            if not user_href or "/user/" not in user_href:
+                                continue
+                                
+                            user_id = user_href.split("/user/")[1].split("?")[0]
+                            if not user_id:
                                 continue
                             
-                            # 尝试获取用户名
-                            try:
-                                username = user_link.text.strip()
-                                if not username:
-                                    username = "未知用户"
-                                    logger.info(f"用户 {user_id} 的用户名为空，设置为默认值：{username}")
-                            except Exception as e:
-                                username = "未知用户"
-                                logger.warning(f"提取用户名失败，使用默认值：{username}，错误：{str(e)}")
+                            # 获取用户名
+                            username = user_link.text.strip() or "未知用户"
                             
-                            # 验证用户信息的有效性
-                            if user_id and user_id not in processed_users:
-                                # 首先检查用户是否已经在follow表中存在
+                            # 验证用户信息并添加到数据库
+                            if user_id not in processed_users:
                                 if self.db.is_followed(user_id):
                                     logger.info(f"用户 {user_id} ({username}) 已在关注列表中，跳过")
-                                    processed_users.add(user_id)  # 记录为已处理
+                                    processed_users.add(user_id)
                                     continue
                                 
-                                processed_users.add(user_id)  # 记录已处理的用户ID
+                                processed_users.add(user_id)
                                 
-                                # 添加到follow_fans表
                                 if self.db.add_follow_fan(user_id, username, "video_comment", video_url):
                                     extracted_users += 1
                                     logger.info(f"已提取评论用户 {extracted_users}/{max_extract}: {username} ({user_id})")
-                                else:
-                                    logger.warning(f"添加用户到数据库失败: {username} ({user_id})")
-                            
-                            # 如果已经提取足够数量的用户，则退出
-                            if extracted_users >= max_extract:
-                                break
+                                    if extracted_users >= max_extract:
+                                        break
+                                
                         except Exception as e:
                             logger.warning(f"处理评论用户失败: {str(e)}")
                             continue
                 
                 scroll_count += 1
                 
-                # 如果已经提取足够数量的用户，则退出
                 if extracted_users >= max_extract:
                     break
                 
-                # 如果连续5次没有新数据，认为已到底
                 if no_new_data_count >= 5:
                     logger.info("连续5次未检测到新评论，认为已到达底部")
                     break
             
             logger.info(f"成功从视频 {video_url} 中提取 {extracted_users} 个评论用户")
             
-            # 只有当提取到足够数量的用户时，才标记视频为已处理
+            # 4. 发送评论
             if extracted_users >= min_extract_users:
-                logger.info(f"已达到最小提取用户数 {min_extract_users}，标记视频为已处理")
-                self.db.mark_video_processed(video_url, True)
-                return True
+                if self._post_comment(video_url):
+                    logger.info(f"已达到最小提取用户数 {min_extract_users}，标记视频为已处理")
+                    self.db.mark_video_processed(video_url, True)
+                    return True
+                else:
+                    logger.warning("评论发送失败，但已提取足够用户")
+                    return True
             else:
                 logger.warning(f"提取的用户数 {extracted_users} 小于最小要求 {min_extract_users}，视频将不会被标记为已处理")
                 return False
@@ -363,6 +263,69 @@ class VideoCommentManager:
             save_screenshot(self.driver, "video_comment_error")
             return False
     
+    def _post_comment(self, video_url):
+        """发送评论"""
+        try:
+            comment_text = "新人涨粉，互关必回"
+            
+            # 查找评论输入框
+            try:
+                comment_container = self.wait.until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "comment-input-inner-container"))
+                )
+                
+                comment_container.click()
+                self.random_sleep(1, 2)
+                
+                editor = self.wait.until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "public-DraftEditor-content"))
+                )
+                
+                editor.clear()
+                self.random_sleep(0.5, 1)
+                
+                for char in comment_text:
+                    editor.send_keys(char)
+                    self.random_sleep(0.1, 0.3)
+                
+                logger.info("找到评论输入框并输入内容")
+                self.random_sleep(1, 2)
+            except Exception as e:
+                logger.error(f"未找到评论输入框或输入失败: {str(e)}")
+                return False
+            
+            # 发送评论
+            try:
+                send_button = self.wait.until(
+                    EC.element_to_be_clickable((By.CLASS_NAME, "NUzvFSPe"))
+                )
+                
+                self.driver.execute_script("arguments[0].click();", send_button)
+                logger.info("点击发送按钮")
+                self.random_sleep(2, 3)
+                
+                try:
+                    self.wait.until_not(
+                        EC.presence_of_element_located((By.CLASS_NAME, "NUzvFSPe"))
+                    )
+                    logger.info("评论发送成功")
+                    return True
+                except:
+                    logger.warning("评论发送状态未知，可能需要人工验证")
+                    save_screenshot(self.driver, "comment_send_status")
+                    
+                    user_input = input("请检查评论是否发送成功，如果需要验证码请完成验证。是否继续？(y/n): ")
+                    return user_input.lower() == 'y'
+                
+            except Exception as e:
+                logger.warning(f"发送评论遇到异常: {str(e)}")
+                save_screenshot(self.driver, "send_comment_error")
+                return False
+                
+        except Exception as e:
+            logger.error(f"发送评论失败: {str(e)}")
+            return False
+
     def run_video_comment_task(self):
         """
         执行视频评论任务

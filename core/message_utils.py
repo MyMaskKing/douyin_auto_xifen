@@ -71,11 +71,15 @@ class MessageUtils:
 
                         # 检查是否有发送失败提示
                         failure_texts = ["发送失败", "请求频繁", "操作太频繁", "稍后再试"]
-                        for text in failure_texts:
-                            if text in content:
-                                logger.warning(f"检测到发送失败提示: {text}")
-                                return False
-                                    
+                        
+                        # 检查div和span标签中的文本
+                        error_elements = self.driver.find_elements(By.XPATH, "//div[contains(text(), '发送失败') or contains(text(), '请求频繁') or contains(text(), '操作太频繁') or contains(text(), '稍后再试')] | //span[contains(text(), '发送失败') or contains(text(), '请求频繁') or contains(text(), '操作太频繁') or contains(text(), '稍后再试')]")
+                        
+                        if error_elements:
+                            error_text = error_elements[0].text
+                            logger.warning(f"检测到发送失败提示: {error_text}")
+                            return False
+                            
                         # 检查消息是否在文本内容中
                         if message in content:
                             message_found = True

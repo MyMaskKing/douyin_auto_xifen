@@ -11,22 +11,22 @@ target_videos:  # 目标视频列表（想要评论和关注的视频）
 features:
   # 视频任务功能
   video_tasks:
-    enabled: false                # 是否启用视频相关任务
-    get_video_reviewers: false   # 是否启用提取评论用户功能
-    follow_video_fans: false     # 是否启用视频评论者关注功能
+    enabled: true                # 是否启用视频相关任务
+    get_video_reviewers: true   # 是否启用提取评论用户功能
+    follow_video_fans: true     # 是否启用视频评论者关注功能
   
   # 关注列表任务功能
   follow_list_tasks:
     enabled: false                # 是否启用关注列表相关任务
-    check_follows: false         # 是否启用审查关注列表功能
+    check_follows: true         # 是否启用审查关注列表功能
     unfollow_users: false        # 是否启用取关功能
   
   # 粉丝列表任务功能
   fan_list_tasks:
-    enabled: true                # 是否启用粉丝列表相关任务
-    check_fans: true             # 是否启用检查粉丝列表功能
+    enabled: false                # 是否启用粉丝列表相关任务
+    check_fans: false             # 是否启用检查粉丝列表功能
     follow_back: false           # 是否启用回关功能
-    fan_interaction: true        # 是否启用粉丝私信互动功能
+    fan_interaction: false        # 是否启用粉丝私信互动功能
 
 # 操作配置
 operation:
@@ -51,6 +51,7 @@ operation:
   fan_list_tasks:
     follow_interval: [30, 60]    # 关注操作间隔（秒）
     max_messages_per_day: 100    # 每日最大私信数量
+    message_retry_wait: 300      # 私信发送失败后重试等待时间（秒）
   
   # 通用操作配置
   common:
@@ -59,17 +60,11 @@ operation:
 # 消息模板配置
 message_templates:
   day_1:  # 第一天的消息模板
-    - "你好呀，很高兴认识你~（为了成为有效粉丝，需要进行三天聊天，这是第一天。）"
-    - "Hi，谢谢你的关注！（为了成为有效粉丝，需要进行三天聊天，这是第一天。）"
-    - "嗨，感谢关注，希望我们能成为好朋友~（为了成为有效粉丝，需要进行三天聊天，这是第一天。）"
+    - "测试中，如有打扰请无视，万分抱歉。（第一天）"
   day_2:  # 第二天的消息模板
-    - "最近在忙什么呢？（为了成为有效粉丝，需要进行三天聊天，这是第二天。）"
-    - "今天过得怎么样呀？（为了成为有效粉丝，需要进行三天聊天，这是第二天。）"
-    - "有什么有趣的事情想分享吗？（为了成为有效粉丝，需要进行三天聊天，这是第二天。）"
+    - "测试中，如有打扰请无视，万分抱歉。（第二天）"
   day_3:  # 第三天的消息模板
-    - "这几天聊得很开心，希望以后也能经常互动~（为了成为有效粉丝，需要进行三天聊天，这是第三天。）"
-    - "感谢这几天的交流，你真的很有趣！（为了成为有效粉丝，需要进行三天聊天，这是第三天。）"
-    - "和你聊天很愉快，期待更多的分享~（为了成为有效粉丝，需要进行三天聊天，这是第三天。）"
+    - "测试中，如有打扰请无视，万分抱歉。（第三天）"
 
 # 工作时间配置
 working_hours:
