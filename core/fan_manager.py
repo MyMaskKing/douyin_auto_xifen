@@ -12,6 +12,7 @@ from .logger import logger, save_screenshot, save_html, get_log_path
 import json
 import re
 from .message_manager import MessageManager
+from .user_info_utils import UserInfoUtils
 import random
 
 class FanManager:
@@ -36,121 +37,8 @@ class FanManager:
         self.random_sleep = browser_manager.random_sleep
         # 初始化消息管理器
         self.message_manager = MessageManager(browser_manager, db, config)
-        
-    def process_fan_item(self, fan_item):
-        """
-        处理单个粉丝项
-        
-        参数:
-            fan_item: 粉丝项元素
-            
-        返回:
-            dict: 包含粉丝信息的字典，如果处理失败则返回None
-        """
-        try:
-            # 首先尝试获取用户ID，这是最关键的信息
-            user_id = None
-            try:
-                # 使用href属性定位用户链接
-                link_element = fan_item.find_element(By.XPATH, ".//div/div/a[@href]")
-                href = link_element.get_attribute('href')
-                if href and '/user/' in href:
-                    user_id = href.split('/user/')[-1].split('?')[0]
-            except:
-                logger.warning("无法获取用户ID，跳过处理")
-                return None
-            
-            if not user_id:
-                logger.warning("未找到用户ID，跳过处理")
-                return None
-            
-            # 尝试获取用户名，但即使获取失败也继续处理
-            username = "未知用户"
-            try:
-                # 使用正确的XPath路径获取用户名
-                username_element = link_element.find_element(By.XPATH, ".//span/span/span/span/span")
-                temp_username = username_element.text.strip()
-                if temp_username:
-                    username = temp_username
-                    logger.info(f"成功获取用户名: {username}")
-            except Exception as e:
-                logger.warning(f"无法获取用户名，使用默认值: {username}，错误: {str(e)}")
-            
-            # 检查关注状态和按钮
-            ui_follow_status = None  # UI上显示的关注状态
-            follow_button = None
-            try:
-                # 使用层级关系获取按钮
-                buttons = fan_item.find_elements(By.XPATH, ".//button")
-                for button in buttons:
-                    try:
-                        button_text = button.find_element(By.XPATH, ".//div").text.strip()
-                        
-                        if "相互关注" in button_text:
-                            ui_follow_status = "mutual"
-                            status_text = "相互关注(mutual)"
-                            break
-                        elif "回关" in button_text:
-                            ui_follow_status = "need_follow_back"
-                            status_text = "待回关(need_follow_back)"
-                            follow_button = button
-                            break
-                        elif "已请求" in button_text:
-                            ui_follow_status = "requested"
-                            status_text = "已请求(requested)"
-                            break
-                    except:
-                        continue
-                
-                if not ui_follow_status:
-                    ui_follow_status = "unknown"
-                    status_text = "未知状态(unknown)"
-                
-                logger.info(f"用户 {username} ({user_id}) 的关注状态: {status_text}")
-            except:
-                logger.warning(f"无法获取用户 {username} ({user_id}) 的UI关注状态")
-                ui_follow_status = "unknown"
-                status_text = "未知状态(unknown)"
-            
-            # 检查数据库中是否已存在该粉丝
-            existing_fan = self.db.get_user_by_id(user_id)
-            
-            # 确定最终的关注状态
-            if existing_fan:
-                # 已存在的粉丝，使用数据库中的状态
-                db_follow_status = existing_fan.get('follow_status', 'unknown')
-                logger.info(f"用户 {username} ({user_id}) 在数据库中已存在，状态: {db_follow_status}")
-                
-                # 只有当UI状态与数据库状态不一致时才更新
-                if ui_follow_status and ui_follow_status != "unknown" and ui_follow_status != db_follow_status:
-                    logger.info(f"更新用户 {username} ({user_id}) 的关注状态: {db_follow_status} -> {ui_follow_status}")
-                    self.db.add_fan_record(user_id, username, ui_follow_status)
-                    follow_status = ui_follow_status
-                else:
-                    follow_status = db_follow_status
-            else:
-                # 新发现的粉丝
-                if ui_follow_status and ui_follow_status != "unknown":
-                    follow_status = ui_follow_status
-                else:
-                    # 默认为新粉丝
-                    follow_status = "new_fan"
-                logger.info(f"发现新粉丝: {username} ({user_id}), 状态: {follow_status}")
-                
-                # 将新粉丝信息保存到数据库
-                self.db.add_fan_record(user_id, username, follow_status)
-            
-            return {
-                'element': fan_item,
-                'username': username,
-                'user_id': user_id,
-                'follow_status': follow_status,
-                'follow_back_button': follow_button if follow_status == "need_follow_back" else None
-            }
-            
-        except Exception as e:
-            logger.error(f"处理粉丝项时出错: {str(e)}")
-            return None
+        # 初始化用户信息工具类
+        self.user_info_utils = UserInfoUtils(self.driver, self.wait, self.random_sleep)
 
     def get_fan_items(self):
         """
@@ -177,10 +65,7 @@ class FanManager:
             save_html(self.driver, "fans_page")
             
             # 初始化结果
-            processed_users = set()  # 使用集合存储已处理的用户ID
             result = []
-            last_height = 0
-            no_new_items_count = 0
             retry_count = 0
             max_retries = 3
             
@@ -211,80 +96,68 @@ class FanManager:
                         else:
                             break
                     
-                    # 获取当前可见的粉丝项
-                    # 使用data-e2e属性定位容器，然后获取其直接子元素中的粉丝项
-                    fan_items = container.find_elements(By.XPATH, "./div/div[.//a[contains(@href, '/user/')]]")
-                    current_count = len(fan_items)
+                    # 使用UserInfoUtils滚动并提取用户信息
+                    users_info, success = self.user_info_utils.scroll_and_extract_users(
+                        container, 
+                        "粉丝列表", 
+                        expected_total=expected_total,
+                        max_no_new_content=5,
+                        min_wait=3,
+                        max_wait=5,
+                        max_retries=3
+                    )
                     
-                    if current_count > 0:
-                        logger.info(f"当前已加载 {current_count} 个粉丝项，已处理 {len(processed_users)} 个")
-                    
-                    # 处理新加载的粉丝项
-                    for fan_item in fan_items:
-                        try:
-                            # 先尝试获取用户ID
-                            user_id = None
-                            try:
-                                # 使用href属性定位用户链接
-                                link_element = fan_item.find_element(By.XPATH, ".//a[contains(@href, '/user/')]")
-                                href = link_element.get_attribute('href')
-                                if href and '/user/' in href:
-                                    user_id = href.split('/user/')[-1].split('?')[0]
-                            except:
-                                continue
-                            
-                            # 如果已经处理过该用户，跳过
-                            if user_id in processed_users:
-                                continue
-                                
-                            # 处理粉丝信息
-                            fan_info = self.process_fan_item(fan_item)
-                            if fan_info:
-                                processed_users.add(user_id)  # 使用用户ID而不是用户名来标记
-                                result.append(fan_info)
-                                
-                        except Exception as e:
-                            logger.warning(f"处理粉丝项时出错: {str(e)}")
-                            continue  # 继续处理下一个粉丝
-                    
-                    # 检查是否已加载所有粉丝
-                    if len(processed_users) >= expected_total:
-                        logger.info(f"已处理所有粉丝 ({len(processed_users)}/{expected_total})")
-                        break
-                    
-                    # 滚动到底部并检查是否有新内容
-                    try:
-                        current_height = self.driver.execute_script("return arguments[0].scrollHeight", container)
-                        if current_height == last_height:
-                            no_new_items_count += 1
-                            if no_new_items_count >= 5:
-                                logger.info("连续5次滚动未发现新内容，停止滚动")
-                                break
-                        else:
-                            no_new_items_count = 0
-                            
-                        # 使用平滑滚动，每次只滚动一部分
-                        scroll_step = 100  # 每次滚动100像素
-                        current_scroll = self.driver.execute_script("return arguments[0].scrollTop", container)
-                        target_scroll = current_height
-                        
-                        while current_scroll < target_scroll:
-                            current_scroll = min(current_scroll + scroll_step, target_scroll)
-                            self.driver.execute_script("arguments[0].scrollTop = arguments[1]", container, current_scroll)
-                            # 短暂等待，让内容加载
-                            time.sleep(0.5)
-                        
-                        # 滚动完成后，等待新内容加载
-                        self.random_sleep(3, 5)
-                        last_height = current_height
-                    except Exception as e:
-                        logger.warning(f"滚动操作失败: {str(e)}")
+                    if not success:
+                        logger.warning("滚动并提取用户信息失败")
                         if retry_count < max_retries:
                             retry_count += 1
                             self.random_sleep(2, 3)
                             continue
                         else:
                             break
+                    
+                    # 处理提取到的用户信息
+                    for user_info in users_info:
+                        # 检查数据库中是否已存在该粉丝
+                        existing_fan = self.db.get_user_by_id(user_info['user_id'])
+                        
+                        # 确定最终的关注状态
+                        if existing_fan:
+                            # 已存在的粉丝，使用数据库中的状态
+                            db_follow_status = existing_fan.get('follow_status', 'unknown')
+                            logger.info(f"用户 {user_info['username']} ({user_info['user_id']}) 在数据库中已存在，状态为: {db_follow_status}")
+                            
+                            # 只有当UI状态与数据库状态不一致时才更新
+                            if user_info['follow_status'] != "unknown" and user_info['follow_status'] != db_follow_status:
+                                logger.info(f"更新用户 {user_info['username']} 的关注状态: {db_follow_status} -> {user_info['follow_status']}")
+                                self.db.add_fan_record(user_info['user_id'], user_info['username'], user_info['follow_status'])
+                                follow_status = user_info['follow_status']
+                            else:
+                                follow_status = db_follow_status
+                        else:
+                            # 新发现的粉丝
+                            logger.info(f"发现新粉丝: {user_info['username']} ({user_info['user_id']}), 状态: {user_info['follow_status']}")
+                            if user_info['follow_status'] != "unknown":
+                                follow_status = user_info['follow_status']
+                            else:
+                                # 默认为新粉丝
+                                follow_status = "new_fan"
+                            
+                            # 将新粉丝信息保存到数据库
+                            logger.info(f"将新粉丝 {user_info['username']} 添加到数据库，状态: {follow_status}")
+                            self.db.add_fan_record(user_info['user_id'], user_info['username'], follow_status)
+                        
+                        # 添加到结果列表
+                        result.append({
+                            'element': user_info['element'],
+                            'username': user_info['username'],
+                            'user_id': user_info['user_id'],
+                            'follow_status': follow_status,
+                            'follow_back_button': user_info['button_element'] if user_info['button_type'] == 'follow' else None
+                        })
+                    
+                    # 滚动和提取完成后，退出循环
+                    break
                     
                 except Exception as e:
                     logger.warning(f"处理粉丝列表过程中出错: {str(e)}")
@@ -334,12 +207,6 @@ class FanManager:
         except Exception as e:
             logger.warning(f"获取预期粉丝总数失败: {str(e)}")
             return None
-
-    def calculate_scroll_attempts(self, expected_total):
-        """计算需要滚动的次数"""
-        if expected_total:
-            return min(20, (expected_total // 15) + 2)
-        return 10  # 默认滚动次数
 
     def run_check_fans_task(self):
         """
