@@ -5,17 +5,83 @@ import os
 import time
 import signal
 import sys
+import shutil
 from loguru import logger
 from core.douyin_bot import DouyinBot
 from utils.db import Database
 from utils.config import load_config
+from utils.paths import *
 from datetime import datetime
+
+
+def get_resource_path(relative_path):
+    """获取资源文件路径，兼容开发环境和打包环境"""
+    try:
+        # PyInstaller创建临时文件夹，将路径存储在_MEIPASS中
+        base_path = sys._MEIPASS
+    except Exception:
+        # 如果不是打包环境，则使用当前目录
+        base_path = os.path.abspath(".")
+    
+    return os.path.join(base_path, relative_path)
+
+def init_workspace():
+    """初始化工作目录"""
+    # 创建工作主目录
+    workspace_path = get_workspace_path()
+    if not os.path.exists(workspace_path):
+        os.makedirs(workspace_path)
+        logger.info(f"创建工作目录: {workspace_path}")
+    
+    # 在工作目录下创建子目录
+    subdirs = [get_config_path(), get_data_path(), get_logs_path(), get_screenshots_path()]
+    for dir_path in subdirs:
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+            logger.info(f"创建目录: {dir_path}")
+    
+    # 检查配置文件和模板文件
+    config_file = os.path.join(get_config_path(), 'config.yaml')
+    example_config = os.path.join(get_config_path(), 'config.example.yaml')
+    
+    # 如果模板文件不存在，从打包的文件中复制
+    if not os.path.exists(example_config):
+        # 获取打包后的模板文件路径
+        source_example = get_resource_path(os.path.join('config', 'config.example.yaml'))
+        if os.path.exists(source_example):
+            shutil.copy2(source_example, example_config)
+            logger.info(f"创建配置文件模板: {example_config}")
+        else:
+            logger.error(f"找不到配置文件模板！路径: {source_example}")
+            print("\n错误：找不到配置文件模板，请确保程序完整性后重试")
+            sys.exit(1)
+    
+    # 检查配置文件是否存在
+    if not os.path.exists(config_file):
+        print("\n" + "="*50)
+        print("首次运行需要配置！")
+        print(f"请复制配置文件模板: {example_config}")
+        print(f"到配置文件: {config_file}")
+        print("并按照需求修改配置内容")
+        print("修改完成后按回车键继续...")
+        print("="*50 + "\n")
+        input()
+        
+        # 再次检查配置文件是否存在
+        if not os.path.exists(config_file):
+            print("\n错误：未找到配置文件，请确保已复制并修改配置文件后再运行程序")
+            logger.error("用户未创建配置文件")
+            sys.exit(1)
+        
+        logger.info("用户已确认配置文件创建完成")
+    
+    return config_file  # 返回配置文件路径
 
 # 创建分类日志目录
 def setup_logging():
     """设置日志配置"""
     # 创建日志目录
-    log_dir = os.path.join("logs", datetime.now().strftime("%Y-%m-%d"), "app_logs")
+    log_dir = os.path.join(get_logs_path(), datetime.now().strftime("%Y-%m-%d"), "app_logs")
     os.makedirs(log_dir, exist_ok=True)
     
     # 生成日志文件名
@@ -40,14 +106,15 @@ def setup_logging():
     )
     
     logger.info(f"日志文件路径: {log_file}")
+    return log_file
 
 # 创建必要的目录
 def setup_directories():
     """创建必要的目录"""
     dirs = [
-        "logs",
-        "screenshots",
-        "data"
+        get_logs_path(),
+        get_screenshots_path(),
+        get_data_path()
     ]
     
     for dir_path in dirs:
@@ -62,15 +129,18 @@ def signal_handler(signum, frame):
 
 def main():
     """主函数"""
-    # 设置日志和目录
-    setup_logging()
-    setup_directories()
-    
-    # 注册信号处理
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-    
     try:
+        # 初始化工作目录
+        config_file = init_workspace()
+        
+        # 设置日志和目录
+        setup_logging()
+        setup_directories()
+        
+        # 注册信号处理
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+        
         # 加载配置
         config = load_config()
         
@@ -109,7 +179,6 @@ def main():
                     break
                 else:
                     logger.info("用户选择继续执行任务")
-                
                 
             except Exception as e:
                 logger.error(f"运行任务时出错: {str(e)}")

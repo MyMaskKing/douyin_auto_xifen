@@ -1,9 +1,13 @@
 import yaml
 from loguru import logger
 import os
+from .paths import get_config_path
 
-def load_config(config_path="config/config.yaml"):
+def load_config(config_path=None):
     """加载配置文件"""
+    if config_path is None:
+        config_path = os.path.join(get_config_path(), "config.yaml")
+        
     try:
         if not os.path.exists(config_path):
             raise FileNotFoundError("配置文件不存在，请复制config.example.yaml为config.yaml并进行配置")

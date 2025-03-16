@@ -1,6 +1,68 @@
 # 抖音自动涨粉工具
 
-这是一个基于Edge浏览器的抖音自动涨粉工具，通过模拟真实用户操作来增加粉丝数量。工具设计简单易用，专注于核心功能。
+## 目录结构说明
+```
+├── config/           # 配置文件目录
+│   ├── config.yaml   # 主配置文件
+│   └── messages.txt  # 私信消息模板
+├── data/            # 数据存储目录
+│   └── douyin.db    # SQLite数据库文件
+├── logs/            # 日志目录
+│   └── YYYY-MM-DD/  # 按日期分类的日志文件
+└── 抖音自动涨粉工具.exe  # 主程序
+```
+
+## 使用说明
+
+1. 首次运行前准备:
+   - 确保config目录下有正确的配置文件
+   - 确保data目录存在(程序会自动创建数据库)
+   - 确保logs目录存在(程序会自动创建)
+
+2. 配置文件说明(config/config.yaml):
+   ```yaml
+   browser:
+     type: "edge"  # 浏览器类型：edge/chrome
+     headless: false  # 是否使用无头模式
+     
+   features:
+     follow_video_fans: true  # 是否开启关注视频评论者
+     check_follow_list: true  # 是否检查关注列表
+     check_fans_list: false   # 是否检查粉丝列表
+     
+   operation:
+     video_tasks:
+       follow_fans_batch_size: 10  # 每批处理的粉丝数量
+       daily_follow_limit: 150     # 每日关注上限
+       
+   interaction:
+     follow_message: "感谢关注！"  # 关注后发送的私信内容
+   ```
+
+3. 运行程序:
+   - 双击运行"抖音自动涨粉工具.exe"
+   - 首次运行会自动创建必要的目录和数据库
+   - 程序会在logs目录下生成运行日志
+
+4. 注意事项:
+   - 请确保配置文件格式正确
+   - 建议定期备份data目录下的数据库文件
+   - 如遇到问题，请查看logs目录下的日志文件
+
+## 常见问题
+
+1. 程序无法启动
+   - 检查config.yaml配置文件是否存在且格式正确
+   - 检查是否已安装所需的浏览器(Edge/Chrome)
+   - 查看logs目录下的错误日志
+
+2. 数据库访问错误
+   - 确保data目录存在且有写入权限
+   - 备份并删除可能损坏的数据库文件，程序会自动创建新的
+
+3. 日志相关
+   - 程序会自动按日期创建日志文件
+   - 建议定期清理旧的日志文件以节省空间
 
 ## 功能特点
 

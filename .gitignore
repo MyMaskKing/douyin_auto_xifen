@@ -19,6 +19,8 @@ var/
 *.egg-info/
 .installed.cfg
 *.egg
+douyin_bot_workspace/
+.wdm/
 
 # 项目特定文件
 browser_data/

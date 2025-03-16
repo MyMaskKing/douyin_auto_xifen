@@ -2,12 +2,13 @@ import sqlite3
 from datetime import datetime, timedelta
 from loguru import logger
 import os
+from .paths import get_data_path
 
 class Database:
     def __init__(self):
         # 确保data目录存在
-        os.makedirs('data', exist_ok=True)
-        self.conn = sqlite3.connect('data/douyin.db')
+        os.makedirs(get_data_path(), exist_ok=True)
+        self.conn = sqlite3.connect(os.path.join(get_data_path(), 'douyin.db'))
         self.create_tables()
         
     def create_tables(self):

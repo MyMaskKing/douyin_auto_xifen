@@ -10,6 +10,7 @@ import os
 import time
 from datetime import datetime
 import shutil
+from utils.paths import get_logs_path
 
 # 配置日志记录器，避免将HTML内容写入app_logs
 logger.remove()  # 移除默认处理器
@@ -76,45 +77,33 @@ SCREENSHOT_LEVEL = {
 
 def cleanup_logs():
     """清理过期的日志文件"""
-    if not _config or 'logging' not in _config:
-        return
-        
-    max_log_files = _config['logging'].get('max_log_files', 10)
-    max_screenshot_files = _config['logging'].get('max_screenshot_files', 50)
-    
-    # 清理日志文件
     try:
-        log_dirs = [d for d in os.listdir('logs') if os.path.isdir(os.path.join('logs', d))]
-        log_dirs.sort(reverse=True)  # 按日期倒序排列
+        # 使用正确的日志目录路径
+        log_dir = get_logs_path()
         
-        # 保留最近的max_log_files个日志目录
-        if len(log_dirs) > max_log_files:
-            for old_dir in log_dirs[max_log_files:]:
-                old_path = os.path.join('logs', old_dir)
-                logger.info(f"清理过期日志目录: {old_path}")
-                shutil.rmtree(old_path, ignore_errors=True)
+        # 如果目录不存在，直接返回
+        if not os.path.exists(log_dir):
+            return
+            
+        # 获取所有日期目录
+        date_dirs = [d for d in os.listdir(log_dir) if os.path.isdir(os.path.join(log_dir, d))]
+        
+        # 按日期排序
+        date_dirs.sort(reverse=True)
+        
+        # 保留最近10天的日志
+        keep_days = 10
+        if len(date_dirs) > keep_days:
+            for old_dir in date_dirs[keep_days:]:
+                old_dir_path = os.path.join(log_dir, old_dir)
+                try:
+                    shutil.rmtree(old_dir_path)
+                    logger.info(f"已删除过期日志目录: {old_dir_path}")
+                except Exception as e:
+                    logger.warning(f"删除日志目录失败: {old_dir_path}, 错误: {str(e)}")
+                    
     except Exception as e:
         logger.error(f"清理日志文件失败: {str(e)}")
-    
-    # 清理截图文件
-    try:
-        screenshot_files = []
-        for root, _, files in os.walk(os.path.join('logs')):
-            for file in files:
-                if file.endswith('.png'):
-                    full_path = os.path.join(root, file)
-                    screenshot_files.append((os.path.getmtime(full_path), full_path))
-        
-        # 按修改时间排序
-        screenshot_files.sort(reverse=True)
-        
-        # 删除超过限制的旧截图
-        if len(screenshot_files) > max_screenshot_files:
-            for _, file_path in screenshot_files[max_screenshot_files:]:
-                logger.info(f"清理过期截图: {file_path}")
-                os.remove(file_path)
-    except Exception as e:
-        logger.error(f"清理截图文件失败: {str(e)}")
 
 def get_log_path(log_type, operation=None, user_id=None):
     """
@@ -130,7 +119,7 @@ def get_log_path(log_type, operation=None, user_id=None):
     """
     # 创建日期目录
     today = datetime.now().strftime("%Y-%m-%d")
-    log_dir = os.path.join("logs", today)
+    log_dir = os.path.join(get_logs_path(), today)
     
     # 创建日志类型目录
     type_dir = os.path.join(log_dir, log_type)
