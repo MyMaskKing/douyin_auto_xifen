@@ -56,32 +56,15 @@ class FollowListManager:
             
             # 点击关注按钮打开关注列表
             logger.info("点击关注按钮打开关注列表...")
-            follow_button = None
             try:
-                # 直接使用data-e2e属性查找关注按钮
-                follow_button = self.driver.find_element(By.XPATH, "//div[@data-e2e='user-info-follow']")
+                # 定位到data-e2e='user-info-follow'下包含"关注"文本的元素
+                follow_button = self.driver.find_element(By.XPATH, "//div[@data-e2e='user-info-follow']//div[text()='关注']")
                 follow_button.click()
                 self.random_sleep(2, 3)
             except Exception as e:
-                logger.error(f"直接查找关注按钮失败: {str(e)}")
-                # 尝试使用JavaScript点击
-                try:
-                    self.driver.execute_script("""
-                        var followButtons = document.querySelectorAll('div[class*="count-item"]');
-                        for (var i = 0; i < followButtons.length; i++) {
-                            if (followButtons[i].textContent.includes('关注')) {
-                                followButtons[i].click();
-                                return true;
-                            }
-                        }
-                        return false;
-                    """)
-                    logger.info("通过JavaScript点击关注按钮")
-                    self.random_sleep(2, 3)
-                except Exception as e:
-                    logger.error(f"通过JavaScript点击关注按钮失败: {str(e)}")
-                    self.handle_task_failure("点击关注按钮失败", e, "check_follows_button_error")
-            return False
+                logger.error(f"点击关注按钮失败: {str(e)}")
+                self.handle_task_failure("点击关注按钮失败", e, "check_follows_button_error")
+                return False
             
             # 获取关注列表容器
             container = None
@@ -182,15 +165,15 @@ class FollowListManager:
                             if self.db.mark_user_for_unfollow(user['user_id'], user['username'], unfollow_days):
                                 marked_count += 1
                                 logger.info(f"已标记用户 {user['username']} ({user['user_id']}) 为待取关，将在 {unfollow_days} 天后取关")
-                except Exception as e:
-                            logger.error(f"标记用户为待取关失败: {user['username']}, 错误: {str(e)}")
-                    
+                        except Exception as e:
+                                logger.error(f"标记用户为待取关失败: {user['username']}, 错误: {str(e)}")
+                            
                     logger.info(f"已标记 {marked_count}/{len(non_mutual_users)} 个用户为待取关")
                 
                     return True
                 else:
-                logger.warning("未获取到任何关注用户信息")
-                return False
+                    logger.warning("未获取到任何关注用户信息")
+                    return False
             
         except Exception as e:
             logger.error(f"检查关注列表任务失败: {str(e)}")
