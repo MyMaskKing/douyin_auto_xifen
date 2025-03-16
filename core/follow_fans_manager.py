@@ -201,22 +201,27 @@ class FollowFansManager:
             # 处理待关注粉丝
             success_count = 0
             batch_count = 0  # 记录当前批次处理的数量
+            total_count = len(unprocessed_fans)  # 总待处理数量
+            current_count = 0  # 当前处理的用户序号
             
             for fan in unprocessed_fans:
+                current_count += 1
                 fan_id = fan[0]  # 数据库记录ID
                 user_id = fan[1]  # 用户ID
                 username = fan[2]  # 用户名
                 from_type = fan[3]  # 来源类型
                 
+                logger.info(f"正在处理第 {current_count}/{total_count} 个用户: {username} ({user_id})")
+                
                 # 只处理来自视频评论的用户
                 if from_type != 'video_comment':
-                    logger.info(f"跳过非视频评论用户: {username} ({from_type})")
+                    logger.info(f"[{current_count}/{total_count}] 跳过非视频评论用户: {username} ({from_type})")
                     self.db.mark_follow_fan_as_processed(fan_id)
                     continue
                 
                 # 检查是否已关注
                 if self.db.is_followed(user_id):
-                    logger.info(f"用户 {username} 已经关注过，跳过")
+                    logger.info(f"[{current_count}/{total_count}] 用户 {username} 已经关注过，跳过")
                     self.db.mark_follow_fan_as_processed(fan_id)
                     continue
                 
@@ -224,15 +229,15 @@ class FollowFansManager:
                 follow_success = self.follow_user(user_id, username)
                 
                 if follow_success:
-                    logger.info(f"成功关注视频评论者: {username} ({user_id})")
+                    logger.info(f"[{current_count}/{total_count}] 成功关注视频评论者: {username} ({user_id})")
                     
                     # 发送私信
                     message_success = self.send_message(user_id, username, message)
                     
                     if message_success:
-                        logger.info(f"成功发送私信给用户: {username} ({user_id})")
+                        logger.info(f"[{current_count}/{total_count}] 成功发送私信给用户: {username} ({user_id})")
                     else:
-                        logger.warning(f"发送私信给用户失败: {username} ({user_id})")
+                        logger.warning(f"[{current_count}/{total_count}] 发送私信给用户失败: {username} ({user_id})")
                     
                     # 从follow_fans表中删除
                     self.db.delete_follow_fan(fan_id)
@@ -240,7 +245,7 @@ class FollowFansManager:
                     success_count += 1
                     batch_count += 1
                 else:
-                    logger.warning(f"关注视频评论者失败: {username} ({user_id})")
+                    logger.warning(f"[{current_count}/{total_count}] 关注视频评论者失败: {username} ({user_id})")
                     # 标记为已处理
                     self.db.mark_follow_fan_as_processed(fan_id)
                 
@@ -250,7 +255,7 @@ class FollowFansManager:
                         rest_time = random.uniform(batch_rest_interval[0], batch_rest_interval[1])
                     else:
                         rest_time = batch_rest_interval
-                    logger.info(f"已处理{batch_size_before_rest}个用户，休息 {rest_time:.1f} 秒")
+                    logger.info(f"[{current_count}/{total_count}] 已处理{batch_size_before_rest}个用户，休息 {rest_time:.1f} 秒")
                     time.sleep(rest_time)
                     batch_count = 0  # 重置批次计数
                 else:
@@ -259,10 +264,10 @@ class FollowFansManager:
                         wait_time = random.uniform(user_interval[0], user_interval[1])
                     else:
                         wait_time = user_interval
-                    logger.info(f"等待 {wait_time:.1f} 秒后处理下一个用户")
+                    logger.info(f"[{current_count}/{total_count}] 等待 {wait_time:.1f} 秒后处理下一个用户")
                     time.sleep(wait_time)
             
-            logger.info(f"关注视频评论者任务完成，成功关注 {success_count} 个用户")
+            logger.info(f"关注视频评论者任务完成，成功关注 {success_count}/{total_count} 个用户")
             return True
             
         except Exception as e:

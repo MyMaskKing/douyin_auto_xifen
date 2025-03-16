@@ -313,85 +313,94 @@ class TaskRunner:
             
             # 分批处理取关用户
             batch_size = self.config.get('operation', {}).get('follow_list_tasks', {}).get('unfollow_batch_size', 10)
+            total_success_count = 0  # 总成功数
             
             for i in range(0, len(users_to_unfollow), batch_size):
                 batch = users_to_unfollow[i:i+batch_size]
-                logger.info(f"开始处理第 {i//batch_size + 1} 批取关用户，共 {len(batch)} 个")
+                current_batch = i//batch_size + 1
+                total_batches = (len(users_to_unfollow) + batch_size - 1) // batch_size
+                logger.info(f"[批次 {current_batch}/{total_batches}] 开始处理取关用户，本批 {len(batch)} 个")
                 
-                success_count = 0
+                batch_success_count = 0  # 当前批次成功数
+                current_count = 0
+                batch_total = len(batch)
                 
                 for user in batch:
+                    current_count += 1
+                    total_progress = f"[总进度 {i + current_count}/{len(users_to_unfollow)}]"
+                    batch_progress = f"[批次 {current_batch}/{total_batches} - {current_count}/{batch_total}]"
+                    
                     try:
                         # 检查浏览器状态，确保会话有效
                         if not self.browser_manager.is_browser_alive():
-                            logger.error("浏览器会话已断开，重新启动浏览器")
+                            logger.error(f"{total_progress} {batch_progress} 浏览器会话已断开，重新启动浏览器")
                             if not self.browser_manager.restart_browser():
-                                logger.error("重启浏览器失败，取消当前取关任务")
+                                logger.error(f"{total_progress} {batch_progress} 重启浏览器失败，取消当前取关任务")
                                 return False
                         
-                        logger.info(f"准备取关用户: {user['username']} ({user['user_id']})")
+                        logger.info(f"{total_progress} {batch_progress} 准备取关用户: {user['username']} ({user['user_id']})")
                         
                         # 访问用户页面
                         user_url = f"https://www.douyin.com/user/{user['user_id']}"
-                        logger.info(f"访问用户页面: {user_url}")
+                        logger.info(f"{total_progress} {batch_progress} 访问用户页面: {user_url}")
                         
                         try:
                             self.driver.get(user_url)
                             time.sleep(3)  # 等待页面加载
                         except Exception as e:
-                            logger.error(f"访问用户页面失败: {str(e)}")
+                            logger.error(f"{total_progress} {batch_progress} 访问用户页面失败: {str(e)}")
                             # 检查浏览器状态，如果会话已断开则重启
                             if "invalid session id" in str(e):
-                                logger.error("浏览器会话已断开，尝试重启浏览器")
+                                logger.error(f"{total_progress} {batch_progress} 浏览器会话已断开，尝试重启浏览器")
                                 if not self.browser_manager.restart_browser():
-                                    logger.error("重启浏览器失败，取消当前取关任务")
+                                    logger.error(f"{total_progress} {batch_progress} 重启浏览器失败，取消当前取关任务")
                                     return False
                                 continue  # 跳过当前用户，处理下一个
                         
                         # 执行取关操作
                         if self.follow_manager.unfollow_user(user['username'], user['user_id']):
-                            success_count += 1
+                            batch_success_count += 1
+                            total_success_count += 1
                             # 更新数据库中的用户状态
                             self.db.remove_follow_record(user['user_id'])
+                            logger.info(f"{total_progress} {batch_progress} 成功取关用户: {user['username']} ({user['user_id']})")
                         else:
-                            logger.warning(f"取关用户失败: {user['username']} ({user['user_id']})")
+                            logger.warning(f"{total_progress} {batch_progress} 取关用户失败: {user['username']} ({user['user_id']})")
                         
                         # 随机等待一段时间再处理下一个用户
                         wait_time = random.uniform(
                             self.config.get('operation', {}).get('follow_list_tasks', {}).get('unfollow_interval', [5, 15])[0],
                             self.config.get('operation', {}).get('follow_list_tasks', {}).get('unfollow_interval', [5, 15])[1]
                         )
-                        logger.info(f"等待 {wait_time:.2f} 秒后处理下一个用户")
-                        time.sleep(wait_time)
+                        if current_count < batch_total:  # 如果不是批次的最后一个用户
+                            logger.info(f"{total_progress} {batch_progress} 等待 {wait_time:.2f} 秒后处理下一个用户")
+                            time.sleep(wait_time)
                         
                     except Exception as e:
-                        logger.error(f"处理取关用户失败: {user['username']} ({user['user_id']}), 错误: {str(e)}")
+                        logger.error(f"{total_progress} {batch_progress} 处理取关用户失败: {user['username']} ({user['user_id']}), 错误: {str(e)}")
                         # 检查是否是会话失效错误
                         if "invalid session id" in str(e):
-                            logger.error("浏览器会话已断开，尝试重启浏览器")
+                            logger.error(f"{total_progress} {batch_progress} 浏览器会话已断开，尝试重启浏览器")
                             if not self.browser_manager.restart_browser():
-                                logger.error("重启浏览器失败，取消当前取关任务")
+                                logger.error(f"{total_progress} {batch_progress} 重启浏览器失败，取消当前取关任务")
                                 return False
                         
                         # 继续处理下一个用户
-                        wait_time = random.uniform(
-                            self.config.get('operation', {}).get('follow_list_tasks', {}).get('unfollow_interval', [5, 15])[0],
-                            self.config.get('operation', {}).get('follow_list_tasks', {}).get('unfollow_interval', [5, 15])[1]
-                        )
-                        logger.info(f"等待 {wait_time:.2f} 秒后处理下一个用户")
-                        time.sleep(wait_time)
+                        if current_count < batch_total:  # 如果不是批次的最后一个用户
+                            wait_time = random.uniform(
+                                self.config.get('operation', {}).get('follow_list_tasks', {}).get('unfollow_interval', [5, 15])[0],
+                                self.config.get('operation', {}).get('follow_list_tasks', {}).get('unfollow_interval', [5, 15])[1]
+                            )
+                            logger.info(f"{total_progress} {batch_progress} 等待 {wait_time:.2f} 秒后处理下一个用户")
+                            time.sleep(wait_time)
                 
-                # 计算成功率
-                success_rate = success_count / len(batch) if batch else 0
-                logger.info(f"第 {i//batch_size + 1} 批取关完成，成功率: {success_rate:.2f}")
-                
-                # 如果成功率过低，暂停取关任务
-                min_success_rate = self.config.get('operation', {}).get('follow_list_tasks', {}).get('min_unfollow_success_rate', 0.7)
-                if success_rate < min_success_rate:
-                    logger.warning(f"取关成功率 {success_rate:.2f} 低于阈值 {min_success_rate}，暂停取关任务")
-                    break
+                # 计算批次成功率
+                batch_success_rate = batch_success_count / len(batch) if batch else 0
+                logger.info(f"[批次 {current_batch}/{total_batches}] 完成处理，成功率: {batch_success_rate:.2%} ({batch_success_count}/{batch_total})")
             
-            logger.info(f"取关任务完成，共处理 {len(users_to_unfollow)} 个用户，成功取关 {success_count} 个")
+            # 计算总成功率
+            total_success_rate = total_success_count / len(users_to_unfollow) if users_to_unfollow else 0
+            logger.info(f"取关任务完成，总成功率: {total_success_rate:.2%}，共处理 {len(users_to_unfollow)} 个用户，成功取关 {total_success_count} 个")
             
             # 返回个人主页
             try:

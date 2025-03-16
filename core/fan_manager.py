@@ -342,17 +342,20 @@ class FanManager:
             min_interval, max_interval = follow_interval
             
             success_count = 0
+            total_count = len(users_to_follow_back)
+            current_count = 0
             
             for user in users_to_follow_back:
+                current_count += 1
                 try:
                     user_id = user['user_id']
                     username = user['username']
                     
-                    logger.info(f"准备回关用户: {username} ({user_id})")
+                    logger.info(f"[{current_count}/{total_count}] 准备回关用户: {username} ({user_id})")
                     
                     # 访问用户主页
                     if not self.user_profile_manager.visit_user_profile(user_id):
-                        logger.error(f"访问用户主页失败: {username} ({user_id})")
+                        logger.error(f"[{current_count}/{total_count}] 访问用户主页失败: {username} ({user_id})")
                         continue
                     
                     # 执行关注操作
@@ -360,20 +363,21 @@ class FanManager:
                         success_count += 1
                         # 更新数据库
                         self.db.update_fan_follow_back(user_id)
-                        logger.info(f"成功回关用户: {username} ({user_id})")
+                        logger.info(f"[{current_count}/{total_count}] 成功回关用户: {username} ({user_id})")
                     else:
-                        logger.error(f"回关用户失败: {username} ({user_id})")
+                        logger.error(f"[{current_count}/{total_count}] 回关用户失败: {username} ({user_id})")
                     
                     # 随机等待一段时间
                     wait_time = random.uniform(min_interval, max_interval)
-                    logger.info(f"等待 {wait_time:.2f} 秒后处理下一个用户")
-                    time.sleep(wait_time)
+                    if current_count < total_count:  # 如果不是最后一个用户
+                        logger.info(f"[{current_count}/{total_count}] 等待 {wait_time:.2f} 秒后处理下一个用户")
+                        time.sleep(wait_time)
                     
                 except Exception as e:
-                    logger.error(f"处理回关用户时出错: {str(e)}")
+                    logger.error(f"[{current_count}/{total_count}] 处理回关用户时出错: {str(e)}")
                     continue
             
-            logger.info(f"回关任务完成，成功回关 {success_count}/{len(users_to_follow_back)} 个用户")
+            logger.info(f"回关任务完成，成功回关 {success_count}/{total_count} 个用户")
             return True
             
         except Exception as e:
@@ -544,11 +548,15 @@ class FanManager:
             
             # 处理每个需要互动的粉丝
             success_count = 0
+            total_count = len(fans_need_message)  # 总待处理数量
+            current_count = 0  # 当前处理的粉丝序号
+            
             for fan in fans_need_message:
+                current_count += 1
                 try:
                     # 检查必要的字段是否存在
                     if not all(key in fan for key in ['user_id', 'username', 'days_since_follow']):
-                        logger.warning(f"粉丝数据缺少必要字段: {fan}")
+                        logger.warning(f"[{current_count}/{total_count}] 粉丝数据缺少必要字段: {fan}")
                         continue
                         
                     user_id = fan['user_id']
@@ -557,22 +565,25 @@ class FanManager:
                     
                     # 验证days_since_follow的值是否有效
                     if not isinstance(days_since_follow, int) or days_since_follow not in [0, 1, 2]:
-                        logger.warning(f"粉丝 {username} 的days_since_follow值无效: {days_since_follow}")
+                        logger.warning(f"[{current_count}/{total_count}] 粉丝 {username} 的days_since_follow值无效: {days_since_follow}")
                         continue
+                    
+                    logger.info(f"[{current_count}/{total_count}] 正在处理粉丝: {username} ({user_id}), 关注天数: {days_since_follow + 1}")
                     
                     # 发送对应天数的互动消息
                     if self.message_manager.send_message(user_id, username, days_since_follow):
                         success_count += 1
                         # 更新粉丝互动状态
                         self.db.update_fan_interaction(user_id)
-                        logger.info(f"完成与粉丝 {username} 的第 {days_since_follow + 1} 天互动")
-                    
+                        logger.info(f"[{current_count}/{total_count}] 完成与粉丝 {username} 的第 {days_since_follow + 1} 天互动")
+                    else:
+                        logger.warning(f"[{current_count}/{total_count}] 与粉丝 {username} 的第 {days_since_follow + 1} 天互动失败")
                     
                 except Exception as e:
-                    logger.error(f"处理粉丝 {fan.get('username', 'unknown')} 的互动任务失败: {str(e)}")
+                    logger.error(f"[{current_count}/{total_count}] 处理粉丝 {fan.get('username', 'unknown')} 的互动任务失败: {str(e)}")
                     continue
             
-            logger.info(f"粉丝互动任务执行完成，成功发送 {success_count}/{len(fans_need_message)} 条私信")
+            logger.info(f"粉丝互动任务执行完成，成功发送 {success_count}/{total_count} 条私信")
             return True
             
         except Exception as e:

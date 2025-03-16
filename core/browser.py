@@ -136,9 +136,10 @@ class BrowserManager:
             # 等待页面加载
             time.sleep(3)
             
-            # 检查是否存在登录按钮（未登录状态的标志）
+            # 使用XPath检查登录按钮
             try:
-                login_button = self.driver.find_element(By.CSS_SELECTOR, "button.semi-button.semi-button-primary")
+                # 查找button元素，其中包含登录文本的p标签
+                login_button = self.driver.find_element(By.XPATH, "//button[contains(@class, 'semi-button') and contains(@class, 'semi-button-primary')]//p[text()='登录']")
                 if login_button.is_displayed():
                     logger.info("检测到登录按钮，未登录状态")
                     return False
@@ -146,8 +147,7 @@ class BrowserManager:
                 logger.info("未检测到登录按钮，已登录状态")
                 return True
             
-            # 如果没有找到登录按钮，认为是已登录状态
-            return True
+            return False
             
         except Exception as e:
             logger.error(f"验证登录状态时出错: {str(e)}")
