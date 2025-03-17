@@ -5,14 +5,14 @@ account:
 
 # 目标视频配置
 target_videos:  # 目标视频列表（想要评论和关注的视频）
-  - "https://v.douyin.com/XXX/"  # 示例视频链接，请替换为实际视频链接
+  - "https://v.douyin.com/xxx/"  # 示例视频链接，请替换为实际视频链接
 
 # 功能开关配置
 features:
   # 视频任务功能
   video_tasks:
     enabled: true                # 是否启用视频相关任务
-    get_video_reviewers: true   # 是否启用提取评论用户功能
+    get_video_reviewers: false   # 是否启用提取评论用户功能
     follow_video_fans: true     # 是否启用视频评论者关注功能
   
   # 关注列表任务功能
@@ -51,6 +51,7 @@ operation:
   fan_list_tasks:
     follow_interval: [30, 60]    # 关注操作间隔（秒）
     max_messages_per_day: 100    # 每日最大私信数量
+    max_follow_back_per_day: 150 # 每日最大回关数量
     message_retry_wait: 300      # 私信发送失败后重试等待时间（秒）
   
   # 通用操作配置
@@ -79,7 +80,7 @@ test_mode: true  # 设置为true时忽略工作时间限制，随时可以运行
 
 # 互动配置
 interaction:
-  follow_message: "已关注，请回关。为了成为有效粉丝，需要进行三天聊天。"  # 关注后发送的私信内容
+  follow_message: "已关注，请回关。为了成为有效粉丝，需要进行三天聊天，抖音火山版回关就好了，无法私信。"  # 关注后发送的私信内容
 
 # 设备配置
 device:
