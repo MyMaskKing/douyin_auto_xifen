@@ -28,6 +28,7 @@ class MessageUtils:
         self.wait = wait
         self.random_sleep = random_sleep
         self.db = db
+        self.send_msg_limit=False
 
     def check_message_sent(self, message: str) -> bool:
         """
@@ -68,10 +69,16 @@ class MessageUtils:
                         content = pre.text
                         if not content:
                             continue
-
-                        # 检查是否有发送失败提示
-                        failure_texts = ["发送失败", "请求频繁", "操作太频繁", "稍后再试"]
                         
+                        # 检查div和span标签中的文本
+                        reject_send_msg_element = self.driver.find_elements(By.XPATH, "//div[contains(text(), '达到今日上限')]")
+                        
+                        if reject_send_msg_element:
+                            error_text = reject_send_msg_element[0].text
+                            self.check_send_msg_limit(True)
+                            logger.warning(f"检测到发送失败提示(已达到今日发信上限): {error_text}")
+                            return False
+
                         # 检查div和span标签中的文本
                         error_elements = self.driver.find_elements(By.XPATH, "//div[contains(text(), '发送失败') or contains(text(), '请求频繁') or contains(text(), '操作太频繁') or contains(text(), '稍后再试')] | //span[contains(text(), '发送失败') or contains(text(), '请求频繁') or contains(text(), '操作太频繁') or contains(text(), '稍后再试')]")
                         
@@ -124,6 +131,10 @@ class MessageUtils:
             bool: 是否成功发送
         """
         try:
+            if self.check_send_msg_limit():
+                logger.warning(f"自动检测到今日私信已上限，私信功能关闭: {username} ({user_id})")
+                return False
+
             # 访问用户主页
             logger.info(f"访问用户主页准备发送私信: {username} ({user_id})")
             self.driver.get(f"https://www.douyin.com/user/{user_id}")
@@ -376,3 +387,10 @@ class MessageUtils:
             logger.error(f"发送私信失败: {str(e)}")
             save_screenshot(self.driver, f"send_message_error_{user_id}")
             return False 
+    """
+    方法概述：自动检测是否送信上限
+    """
+    def check_send_msg_limit(self, *arg):
+        if len(arg) > 0:
+            self.send_msg_limit = True
+        return self.send_msg_limit
