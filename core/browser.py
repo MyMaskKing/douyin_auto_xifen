@@ -85,10 +85,18 @@ class BrowserManager:
             try:
                 self.driver = webdriver.Edge(service=service, options=options)
             except Exception as e:
-                # 如果启动失败，尝试不使用service参数启动
+                # 如果启动失败，先尝试不使用service参数启动
                 logger.warning(f"使用service参数启动失败: {str(e)}")
                 logger.info("尝试不使用service参数启动...")
-                self.driver = webdriver.Edge(options=options)
+                try:
+                    self.driver = webdriver.Edge(options=options)
+                except Exception as e2:
+                    # 如果还是失败，可能是浏览器进程问题，尝试清理后重试
+                    logger.warning(f"不使用service参数启动也失败: {str(e2)}")
+                    logger.info("尝试清理浏览器进程后重试...")
+                    self.cleanup_browser_processes()
+                    time.sleep(2)
+                    self.driver = webdriver.Edge(service=service, options=options)
             
             self.wait = WebDriverWait(self.driver, 10)
             
@@ -355,4 +363,42 @@ class BrowserManager:
             
         except Exception as e:
             logger.error(f"检查登录状态时出错: {str(e)}")
-            return False 
+            return False
+    
+    def cleanup_browser_processes(self):
+        """清理可能存在的浏览器进程"""
+        import psutil
+        import subprocess
+        
+        try:
+            # 清理Edge浏览器进程
+            subprocess.run(['taskkill', '/F', '/IM', 'msedge.exe'], 
+                         stdout=subprocess.DEVNULL, 
+                         stderr=subprocess.DEVNULL)
+            
+            # 清理Edge驱动进程
+            subprocess.run(['taskkill', '/F', '/IM', 'msedgedriver.exe'], 
+                         stdout=subprocess.DEVNULL, 
+                         stderr=subprocess.DEVNULL)
+            
+            # 等待进程完全结束
+            time.sleep(2)
+            
+            # 清理旧的用户数据目录
+            user_data_dir = get_browser_data_path()
+            if os.path.exists(user_data_dir):
+                for item in os.listdir(user_data_dir):
+                    if item.startswith('temp_'):
+                        try:
+                            full_path = os.path.join(user_data_dir, item)
+                            if os.path.isdir(full_path):
+                                import shutil
+                                shutil.rmtree(full_path, ignore_errors=True)
+                        except Exception as e:
+                            logger.warning(f"清理临时目录失败: {str(e)}")
+            
+            logger.info("浏览器进程清理完成")
+            
+        except Exception as e:
+            logger.warning(f"清理浏览器进程时出错: {str(e)}")
+            # 继续执行，不中断启动流程 
