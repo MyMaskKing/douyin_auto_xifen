@@ -361,8 +361,6 @@ class FanManager:
                     # 执行关注操作
                     if self.follow_user(user_id, username):
                         success_count += 1
-                        # 更新数据库
-                        self.db.update_fan_follow_back(user_id)
                         logger.info(f"[{current_count}/{total_count}] 成功回关用户: {username} ({user_id})")
                     else:
                         logger.error(f"[{current_count}/{total_count}] 回关用户失败: {username} ({user_id})")

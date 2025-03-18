@@ -469,17 +469,23 @@ class Database:
             
     def mark_user_followed_back(self, user_id):
         """
-        标记用户已回关
+        更新粉丝的回关状态
         
         参数:
             user_id: 用户ID
             
         返回:
-            bool: 是否成功标记
+            bool: 是否成功更新
         """
         try:
             now = datetime.now()
             cursor = self.conn.cursor()
+            
+            # 先检查用户是否存在于fans表中
+            cursor.execute("SELECT COUNT(*) FROM fans WHERE user_id = ?", (user_id,))
+            if cursor.fetchone()[0] == 0:
+                logger.error(f"用户 {user_id} 在fans表中不存在")
+                return False
             
             # 更新粉丝记录
             cursor.execute(
@@ -494,25 +500,44 @@ class Database:
                 (now, user_id)
             )
             
-            # 添加关注记录
-            cursor.execute(
-                """
-                INSERT OR REPLACE INTO follows (
-                    user_id, username, follow_time, is_following
+            # 检查是否成功更新
+            if cursor.rowcount == 0:
+                logger.error(f"更新用户 {user_id} 的回关状态失败")
+                return False
+            
+            # 检查用户是否已存在于follows表中
+            cursor.execute("SELECT COUNT(*) FROM follows WHERE user_id = ?", (user_id,))
+            if cursor.fetchone()[0] == 0:
+                # 如果不存在，则插入新记录
+                cursor.execute(
+                    """
+                    INSERT INTO follows (
+                        user_id, username, follow_time, is_following
+                    )
+                    SELECT user_id, username, ?, 1
+                    FROM fans
+                    WHERE user_id = ?
+                    """,
+                    (now, user_id)
                 )
-                SELECT user_id, username, ?, 1
-                FROM fans
-                WHERE user_id = ?
-                """,
-                (now, user_id)
-            )
+            else:
+                # 如果已存在，则更新记录
+                cursor.execute(
+                    """
+                    UPDATE follows 
+                    SET is_following = 1,
+                        follow_time = ?
+                    WHERE user_id = ?
+                    """,
+                    (now, user_id)
+                )
             
             self.conn.commit()
-            logger.info(f"已标记用户 {user_id} 为已回关")
+            logger.info(f"已更新用户 {user_id} 的回关状态")
             return True
             
         except Exception as e:
-            logger.error(f"标记用户已回关失败: {str(e)}")
+            logger.error(f"更新用户回关状态失败: {str(e)}")
             return False
             
     def get_today_follow_back_count(self):

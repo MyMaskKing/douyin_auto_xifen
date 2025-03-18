@@ -87,10 +87,9 @@ class UserProfileManager:
                     
             except Exception as e:
                 logger.warning(f"检查页面加载状态时出错: {str(e)}")
-            
-            # 保存页面截图
-            save_screenshot(self.driver, "user_profile", level="NORMAL", user_id=username)
-            save_html(self.driver, "user_profile", user_id=username)
+                # 保存页面截图
+                save_screenshot(self.driver, "user_profile", level="NORMAL", user_id=username)
+                save_html(self.driver, "user_profile", user_id=username)
                 
             return True
         except Exception as e:
