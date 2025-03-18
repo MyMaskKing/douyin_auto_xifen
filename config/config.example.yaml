@@ -52,8 +52,7 @@ operation:
     follow_interval: [30, 60]    # 关注操作间隔（秒）
     max_messages_per_day: 100    # 每日最大私信数量
     max_follow_back_per_day: 150 # 每日最大回关数量
-    message_retry_wait: 300      # 私信发送失败后重试等待时间（秒）
-  
+
   # 通用操作配置
   common:
     task_interval: 3600          # 任务执行间隔（秒）
