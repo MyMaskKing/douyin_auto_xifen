@@ -235,6 +235,8 @@ class FollowFansManager:
                     message_success = self.send_message(user_id, username, message)
                     
                     if message_success:
+                        # 更新粉丝互动状态
+                        self.db.update_fan_interaction(user_id)
                         logger.info(f"[{current_count}/{total_count}] 成功发送私信给用户: {username} ({user_id})")
                     else:
                         logger.warning(f"[{current_count}/{total_count}] 发送私信给用户失败: {username} ({user_id})")
