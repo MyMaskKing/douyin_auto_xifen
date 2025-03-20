@@ -38,3 +38,7 @@ def get_screenshots_path():
 def get_browser_data_path():
     """获取浏览器数据目录路径"""
     return os.path.join(WORKSPACE_DIR, "browser_data") 
+
+def get_browser_driver_path():
+    """获取浏览器驱动目录路径"""
+    return os.path.join(WORKSPACE_DIR, "browser_drivers") 

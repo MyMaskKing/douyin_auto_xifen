@@ -18,10 +18,11 @@ from selenium.common.exceptions import (
 from webdriver_manager.microsoft import EdgeChromiumDriverManager
 from .logger import logger, save_screenshot, save_html
 from .selectors import COMMON
-from utils.paths import get_browser_data_path, get_workspace_path
+from utils.paths import get_browser_data_path, get_workspace_path, get_browser_driver_path
 import os
 import time
 import random
+import shutil
 from datetime import datetime
 
 class BrowserManager:
@@ -44,20 +45,14 @@ class BrowserManager:
     def start(self):
         """启动Edge浏览器并初始化WebDriver"""
         try:
-            # 设置 Edge 驱动程序路径
-            try:
-                # 使用工作目录下的drivers目录存放驱动
-                driver_path = os.path.join(get_workspace_path(), 'drivers')
-                os.makedirs(driver_path, exist_ok=True)
-                os.environ['WDM_LOCAL'] = '1'  # 使用本地缓存
-                os.environ['WDM_PATH'] = driver_path  # 设置下载路径
-                
-                service = Service(EdgeChromiumDriverManager().install())
+            # 设置 Edge 驱动程序路径    
+            try: 
+                logger.info("使用系统Edge浏览器的驱动...")
+                service = Service("msedgedriver")
             except Exception as e:
                 # 如果自动下载失败，尝试使用系统Edge浏览器的驱动
-                logger.warning(f"自动下载Edge驱动失败: {str(e)}")
-                logger.info("尝试使用系统Edge浏览器的驱动...")
-                service = Service("msedgedriver")
+                logger.warning(f"系统Edge浏览器的驱动使用失败: {str(e)}")
+                service = Service(self.get_download_driver())
 
             # 配置Edge选项
             options = webdriver.EdgeOptions()
@@ -133,7 +128,44 @@ class BrowserManager:
         except Exception as e:
             logger.error(f"启动失败: {str(e)}")
             raise
+
+    def get_download_driver(self):
+        """使用下载的驱动"""
+        # 使用工作目录下的drivers目录存放驱动
+        driver_path = get_browser_driver_path()
+        os.makedirs(driver_path, exist_ok=True)
+        
+        # 检查是否已存在驱动文件
+        msedgedriver_path = os.path.join(driver_path, 'msedgedriver.exe')
+        if os.path.exists(msedgedriver_path):
+            logger.info(f"已找到现有已下载的Edge驱动文件: {msedgedriver_path}")
+        else:
+            logger.info("未找到已下载的Edge驱动文件，正在下载...")
+            # 设置临时下载路径
+            temp_download_path = os.path.join(driver_path, 'temp_drivers')
+            os.makedirs(temp_download_path, exist_ok=True)
             
+            os.environ['WDM_LOCAL'] = '0'  # 使用本地路径下载驱动
+            os.environ['PYTEST_XDIST_WORKER'] = temp_download_path  # 设置下载路径
+            
+            # 下载驱动
+            driver_manager = EdgeChromiumDriverManager()
+            downloaded_driver_path = driver_manager.install()
+            logger.info(f"驱动下载成功: {downloaded_driver_path}")
+            
+            # 复制驱动到drivers目录
+            if os.path.exists(downloaded_driver_path):
+                shutil.copy2(downloaded_driver_path, msedgedriver_path)
+                logger.info(f"驱动已复制到: {msedgedriver_path}")
+                
+                # 清理临时目录
+                try:
+                    shutil.rmtree(temp_download_path)
+                    logger.info(f"临时下载目录已清理: {temp_download_path}")
+                except Exception as e:
+                    logger.warning(f"清理临时下载目录失败: {str(e)}")
+        return msedgedriver_path
+
     def verify_login(self):
         """验证登录状态"""
         try:
