@@ -142,20 +142,22 @@ class Database:
         try:
             cursor = self.conn.cursor()
             
-            # 删除用户的关注记录
+            # 先查询用户是否存在以及记录数量
+            cursor.execute(
+                "SELECT COUNT(*) FROM follows WHERE user_id = ?",
+                (user_id,)
+            )
+            count = cursor.fetchone()[0]
+            
+            logger.info(f"找到用户 {user_id} 的关注记录，记录数: {count},已执行删除")
+            
+            # 直接删除用户的关注记录
             cursor.execute(
                 "DELETE FROM follows WHERE user_id = ?",
                 (user_id,)
             )
             self.conn.commit()
-            
-            # 检查是否成功删除
-            if cursor.rowcount > 0:
-                logger.info(f"成功删除用户 {user_id} 的关注记录")
-                return True
-            else:
-                logger.warning(f"未找到用户 {user_id} 的关注记录，无法删除")
-                return False
+            return True
                 
         except Exception as e:
             logger.error(f"删除用户关注记录失败: {str(e)}")

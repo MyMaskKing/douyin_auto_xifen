@@ -206,7 +206,7 @@ class FollowListManager:
             except:
                 logger.error("保存截图和HTML失败")
 
-def unfollow_user(self, username, user_id):
+    def unfollow_user(self, username, user_id):
         """
         取消关注用户
         

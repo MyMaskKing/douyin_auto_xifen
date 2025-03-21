@@ -361,8 +361,6 @@ class TaskRunner:
                         if self.follow_manager.unfollow_user(user['username'], user['user_id']):
                             batch_success_count += 1
                             total_success_count += 1
-                            # 更新数据库中的用户状态
-                            self.db.remove_follow_record(user['user_id'])
                             logger.info(f"{total_progress} {batch_progress} 成功取关用户: {user['username']} ({user['user_id']})")
                         else:
                             logger.warning(f"{total_progress} {batch_progress} 取关用户失败: {user['username']} ({user['user_id']})")
